@@ -131,6 +131,20 @@ class BusquedaLinealView(ttk.Frame):
 			return None
 		return key_str
 
+	def validate_repited_key(self, key: str) -> bool:
+		return key in self._data
+
+	def _normalize_key(self, s: str) -> str:
+		s = s.lstrip("0")
+		return s if s != "" else "0"
+
+	def _find_existing_index(self, key: str) -> Optional[int]:
+		k = self._normalize_key(key)
+		for idx, val in enumerate(self._data):
+			if self._normalize_key(val) == k:
+				return idx
+		return None
+
 	def _sort_data(self) -> None:
 		# Mantener la estructura siempre ordenada numéricamente
 		try:
@@ -154,13 +168,6 @@ class BusquedaLinealView(ttk.Frame):
 
 	def _on_insert(self) -> None:
 		_, max_len = self._read_params()
-		try:
-			capacity = int(self.entry_n.get())
-		except Exception:
-			capacity = len(self._data)
-		if len(self._data) >= max(0, capacity):
-			messagebox.showerror("Error", "Capacidad alcanzada (n)")
-			return
 		inp = self.entry_target.get().strip()
 		if inp:
 			key = self._validate_numeric(inp, max_len)
@@ -168,9 +175,28 @@ class BusquedaLinealView(ttk.Frame):
 				return
 		else:
 			key = self._random_key(max_len)
+
+		# 3) Normalizar (opcional pero recomendado para coherencia)
+		key = self._normalize_key(key)
+
+		# 4) Verificar duplicado
+		dup_idx = self._find_existing_index(key)
+		if dup_idx is not None:
+			# Resaltar la fila duplicada y avisar
+			self._selected_index = dup_idx
+			self._delete_index = None
+			self._draw()
+			self.after(400)  # pequeño parpadeo/pausa visual
+			messagebox.showerror("Duplicado", f"La clave '{key}' ya existe en la posición {dup_idx}.")
+			self._selected_index = None
+			self._draw()
+			return
+
+		# 5) Insertar + ordenar + dibujar
 		self._data.append(key)
 		self._sort_data()
 		self._draw()
+
 
 	def _on_delete(self) -> None:
 		inp = self.entry_target.get().strip()
