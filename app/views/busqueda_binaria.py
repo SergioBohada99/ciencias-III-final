@@ -205,7 +205,7 @@ class BusquedaBinariaView(ttk.Frame):
 		except Exception:
 			current_digits = loaded_digits
 		digits = max(current_digits, 1)
-		max_len_ok = all(len(str(abs(n))) <= digits for n in numbers)
+		max_len_ok = all(len(str(abs(n))) == digits for n in numbers)
 		if not max_len_ok:
 			messagebox.showerror("Error", "Clave fuera de máximo dígito en archivo.")
 			return
@@ -245,15 +245,22 @@ class BusquedaBinariaView(ttk.Frame):
 		if not key_str.isdigit():
 			messagebox.showerror("Error", "La clave debe ser numérica.")
 			return None
-		if len(key_str) > digits:
-			messagebox.showerror("Error", "Clave fuera de máximo dígito.")
+		if len(key_str) != digits:
+			messagebox.showerror("Error", f"La clave debe tener exactamente {digits} dígitos.")
 			return None
 		return int(key_str)
 
 	def _on_generate(self) -> None:
 		n, digits = self._read_params()
 		max_value = 10 ** digits - 1
-		self._array = sorted(random.randint(0, max_value) for _ in range(n))
+		min_value = 0 if digits == 1 else 10 ** (digits - 1)
+		values = set()
+		attempts = 0
+		limit = max(1000, n * 10)
+		while len(values) < n and attempts < limit and (max_value - min_value + 1) > len(values):
+			values.add(random.randint(min_value, max_value))
+			attempts += 1
+		self._array = sorted(values)
 		self._low = None
 		self._high = None
 		self._highlight_index = None
@@ -273,7 +280,7 @@ class BusquedaBinariaView(ttk.Frame):
 		value = self._validate_key(key_str, digits)
 		if value is None:
 			return
-		# Insert maintaining sorted order
+		# Insert maintaining sorted order with duplicate check
 		lo, hi = 0, len(self._array)
 		while lo < hi:
 			mid = (lo + hi) // 2
@@ -281,6 +288,9 @@ class BusquedaBinariaView(ttk.Frame):
 				lo = mid + 1
 			else:
 				hi = mid
+		if lo < len(self._array) and self._array[lo] == value:
+			messagebox.showerror("Duplicado", f"La clave {str(value).zfill(digits)} ya existe.")
+			return
 		self._array.insert(lo, value)
 		self.status.configure(text=f"Insertado {value}")
 		self._draw()

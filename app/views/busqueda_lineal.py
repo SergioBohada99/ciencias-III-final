@@ -114,20 +114,15 @@ class BusquedaLinealView(ttk.Frame):
 		return max(0, n), max(1, max_len)
 
 	def _random_key(self, max_len: int) -> str:
-		length = random.randint(1, max_len)
 		alphabet = "0123456789"
-		# Avoid leading zeros only if length > 1 to keep numbers visually meaningful
-		first = random.choice("123456789") if length > 1 else random.choice(alphabet)
-		if length == 1:
-			return first
-		return first + "".join(random.choice(alphabet) for _ in range(length - 1))
+		return "".join(random.choice(alphabet) for _ in range(max_len))
 
 	def _validate_numeric(self, key_str: str, max_len: int) -> Optional[str]:
 		if not key_str.isdigit():
 			messagebox.showerror("Error", "La clave debe ser numérica.")
 			return None
-		if len(key_str) > max_len:
-			messagebox.showerror("Error", "Clave supera el máximo de dígitos.")
+		if len(key_str) != max_len:
+			messagebox.showerror("Error", f"La clave debe tener exactamente {max_len} dígitos.")
 			return None
 		return key_str
 
@@ -135,13 +130,11 @@ class BusquedaLinealView(ttk.Frame):
 		return key in self._data
 
 	def _normalize_key(self, s: str) -> str:
-		s = s.lstrip("0")
-		return s if s != "" else "0"
+		return s
 
 	def _find_existing_index(self, key: str) -> Optional[int]:
-		k = self._normalize_key(key)
 		for idx, val in enumerate(self._data):
-			if self._normalize_key(val) == k:
+			if val == key:
 				return idx
 		return None
 
@@ -154,7 +147,16 @@ class BusquedaLinealView(ttk.Frame):
 
 	def _on_generate(self) -> None:
 		n, max_len = self._read_params()
-		self._data = [self._random_key(max_len) for _ in range(n)]
+		self._data = []
+		seen = set()
+		for _ in range(n):
+			# generate until unique to avoid duplicates in initial data
+			for _attempt in range(1000):
+				k = self._random_key(max_len)
+				if k not in seen:
+					seen.add(k)
+					self._data.append(k)
+					break
 		self._selected_index = None
 		self._delete_index = None
 		self._sort_data()
@@ -333,8 +335,8 @@ class BusquedaLinealView(ttk.Frame):
 		# update max_len field
 		self.entry_len.delete(0, tk.END)
 		self.entry_len.insert(0, str(max_len))
-		# validate numeric and lengths
-		ok = all(x.isdigit() and len(x) <= max_len for x in arr)
+		# validate numeric and lengths (exact length)
+		ok = all(x.isdigit() and len(x) == max_len for x in arr)
 		if not ok:
 			messagebox.showerror("Error", "Clave supera el máximo de caracteres.")
 			return
