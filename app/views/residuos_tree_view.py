@@ -107,6 +107,7 @@ class ResiduosTreeView(ttk.Frame):
 		self.bind_all("<Control-z>", self._on_undo)
 
 		self._draw()
+		
 
 	def _save_state(self) -> None:
 		self._history.append({
@@ -143,15 +144,10 @@ class ResiduosTreeView(ttk.Frame):
 		ch = ch.upper()
 		if not ('A' <= ch <= 'Z') or ch == 'Ñ':
 			raise ValueError("Letra inválida")
-		# Map sin Ñ: A=1..N=14, O=15..Z=25
-		if ch <= 'N':
-			return ord(ch) - ord('A') + 1
-		else:
-			return ord(ch) - ord('A')  # O=15
+		return ord(ch) - ord('A') + 1  # ✅ A=1 ... Z=26
 
 	def _value_to_bits_msb(self, value: int) -> str:
-		# Bits MSB->LSB, sin ceros a la izquierda
-		return bin(value)[2:]
+		return format(value, '05b')  # ✅ SIEMPRE 5 bits, MSB primero
 
 	def _validate_char(self, s: str) -> Optional[str]:
 		if not s or len(s) != 1 or not s.isalpha() or s.upper() == 'Ñ':
@@ -175,42 +171,174 @@ class ResiduosTreeView(ttk.Frame):
 			self._anim_steps.append({"type": "done", "message": f"Inserción de {symbol} completada"})
 
 	def _insert_recursive(self, node: ResidNode, symbol: str, value: int, bits: str, depth: int, animate: bool) -> None:
-		# Si agotamos bits: queremos hoja aquí
-		if depth >= len(bits):
-			if node.node_type == NodeType.LINK and node.symbol is None:
-				node.node_type = NodeType.LEAF
-				node.symbol = symbol
-				node.value = value
-				node.bits = bits
-				if animate:
-					self._anim_steps.append({"type": "leaf", "message": f"Insertar {symbol} como hoja"})
-				return
-			else:
-				# Colisión al intentar ocupar una hoja ya ocupada
-				self._promote_to_collision(node, animate)
-				self._reinsert_from(node, symbol, value, bits, depth, animate)
-				return
+		"""
+		Insercion que:
+		- nunca convierte la raiz en hoja (root debe ser LINK)
+		- rechaza duplicados exactos (sin animacion)
+		- avanza por el prefijo comun y bifurca en el primer bit distinto
+		- mantiene pasos de animacion en puntos relevantes
+		"""
+		# Aseguramos que, si estamos en depth 0, el nodo sea LINK (raiz siempre LINK)
+		if depth == 0 and node.node_type != NodeType.LINK:
+			node.node_type = NodeType.LINK
+			node.symbol = None
+			node.value = None
+			node.bits = None
 
-		bit = bits[depth]  # MSB->LSB
-		if animate:
-			self._anim_steps.append({"type": "traverse", "message": f"Bit {depth + 1} = {bit} → {'der' if bit == '1' else 'izq'}"})
-
-		# Si caemos en hoja, hay colisión -> convertir y reinsertar ambos desde este punto
+		# --- Caso: Nodo hoja (posible colision o duplicado) ---
 		if node.node_type == NodeType.LEAF:
-			self._promote_to_collision(node, animate)
-			self._reinsert_from(node, node.symbol or "", node.value or 0, node.bits or bits, depth, animate)
-			self._reinsert_from(node, symbol, value, bits, depth, animate)
+			# Duplicado exacto -> rechazar (sin animacion)
+			if node.bits == bits:
+				messagebox.showwarning("Duplicado", f"{symbol} ya existe, no se inserta")
+				return
+
+			# Colision: encontramos el primer bit distinto (AHORA desde 'depth')
+			existing_symbol = node.symbol or ""
+			existing_value = node.value or 0
+			existing_bits = node.bits or ""
+
+			if animate:
+				self._anim_steps.append({"type": "collision", "message": f"Colisión: {existing_symbol} vs {symbol} — buscando bit distinto"})
+
+			max_len = max(len(existing_bits), len(bits))
+
+			# <<< CORRECCIÓN: empezar la búsqueda en 'depth', no en 0 >>>
+			diff_index = depth
+			while diff_index < max_len:
+				b_exist = existing_bits[diff_index] if diff_index < len(existing_bits) else '0'
+				b_new = bits[diff_index] if diff_index < len(bits) else '0'
+				if b_exist != b_new:
+					break
+				diff_index += 1
+
+			# Convertir este nodo en LINK (vaciar datos)
+			node.node_type = NodeType.LINK
+			node.symbol = None
+			node.value = None
+			node.bits = None
+
+			# Si no encontramos diferencia (muy raro) -> asignacion deterministica
+			if diff_index >= max_len:
+				if animate:
+					self._anim_steps.append({"type": "split", "message": "Bits iguales hasta el final: asignando determinísticamente izq/der"})
+				# existing -> left, new -> right
+				node.left = ResidNode(NodeType.LEAF)
+				node.left.symbol = existing_symbol
+				node.left.value = existing_value
+				node.left.bits = existing_bits
+
+				node.right = ResidNode(NodeType.LEAF)
+				node.right.symbol = symbol
+				node.right.value = value
+				node.right.bits = bits
+				return
+
+			# Construir la ruta de prefijo común desde 'node' hasta diff_index-1
+			cur = node
+			for i in range(depth, diff_index):
+				# bit comun (si uno se acaba usamos el que exista, por convención '0')
+				b_common = (existing_bits[i] if i < len(existing_bits) else ('0' if i >= len(bits) else bits[i]))
+				# crear enlace si hace falta
+				if b_common == '0':
+					if cur.left is None:
+						cur.left = ResidNode(NodeType.LINK)
+					cur = cur.left
+				else:
+					if cur.right is None:
+						cur.right = ResidNode(NodeType.LINK)
+					cur = cur.right
+				if animate:
+					# mostramos el bit absoluto (i+1)
+					self._anim_steps.append({"type": "traverse", "message": f"Prefijo, bit {i+1} = {b_common} → {'izq' if b_common == '0' else 'der'}"})
+
+			# En diff_index los bits difieren (usar '0' por defecto si alguno se acaba)
+			b_exist = existing_bits[diff_index] if diff_index < len(existing_bits) else '0'
+			b_new = bits[diff_index] if diff_index < len(bits) else '0'
+
+			# Crear hojas en los lados correspondientes
+			if b_exist == '0':
+				cur.left = ResidNode(NodeType.LEAF)
+				cur.left.symbol = existing_symbol
+				cur.left.value = existing_value
+				cur.left.bits = existing_bits
+			else:
+				cur.right = ResidNode(NodeType.LEAF)
+				cur.right.symbol = existing_symbol
+				cur.right.value = existing_value
+				cur.right.bits = existing_bits
+
+			if b_new == '0':
+				# si hay colision en la misma posicion (raro), sobreescribimos/garantizamos hoja
+				cur.left = cur.left or ResidNode(NodeType.LEAF)
+				cur.left.node_type = NodeType.LEAF
+				cur.left.symbol = symbol
+				cur.left.value = value
+				cur.left.bits = bits
+			else:
+				cur.right = cur.right or ResidNode(NodeType.LEAF)
+				cur.right.node_type = NodeType.LEAF
+				cur.right.symbol = symbol
+				cur.right.value = value
+				cur.right.bits = bits
+
+			if animate:
+				self._anim_steps.append({"type": "split", "message": f"Separando en bit {diff_index + 1}: {b_exist} vs {b_new}"})
 			return
 
-		# Nodo de enlace o colisión: avanzar por el bit
+		# --- Caso: Nodo enlace (LINK) ---
+		# Si ya superamos la longitud de bits (poco probable si usas 5 bits fijos),
+		# colocamos la hoja de forma determinista en la izquierda si está libre, si no en la derecha.
+		if depth >= len(bits):
+			if node.left is None:
+				node.left = ResidNode(NodeType.LEAF)
+				node.left.symbol = symbol
+				node.left.value = value
+				node.left.bits = bits
+				if animate:
+					self._anim_steps.append({"type": "leaf", "message": f"Insertar {symbol} en left (depth final)"})
+				return
+			elif node.right is None:
+				node.right = ResidNode(NodeType.LEAF)
+				node.right.symbol = symbol
+				node.right.value = value
+				node.right.bits = bits
+				if animate:
+					self._anim_steps.append({"type": "leaf", "message": f"Insertar {symbol} en right (depth final)"})
+				return
+			else:
+				# Ambos ocupados: continuar por la izquierda de forma determinista
+				if node.left is not None:
+					self._insert_recursive(node.left, symbol, value, bits, depth + 1, animate)
+				return
+
+		# Normal: tomamos el bit actual y descendemos/insertamos
+		bit = bits[depth]
+		if animate:
+			self._anim_steps.append({"type": "traverse", "message": f"Bit {depth + 1} = {bit} → {'derecha' if bit == '1' else 'izquierda'}"})
+
 		if bit == '0':
 			if node.left is None:
-				node.left = ResidNode(NodeType.LINK)
-			self._insert_recursive(node.left, symbol, value, bits, depth + 1, animate)
+				# insertar hoja directamente en esa posicion
+				node.left = ResidNode(NodeType.LEAF)
+				node.left.symbol = symbol
+				node.left.value = value
+				node.left.bits = bits
+				if animate:
+					self._anim_steps.append({"type": "leaf", "message": f"Insertar {symbol} en izq (bit {depth+1})"})
+				return
+			else:
+				self._insert_recursive(node.left, symbol, value, bits, depth + 1, animate)
 		else:
 			if node.right is None:
-				node.right = ResidNode(NodeType.LINK)
-			self._insert_recursive(node.right, symbol, value, bits, depth + 1, animate)
+				node.right = ResidNode(NodeType.LEAF)
+				node.right.symbol = symbol
+				node.right.value = value
+				node.right.bits = bits
+				if animate:
+					self._anim_steps.append({"type": "leaf", "message": f"Insertar {symbol} en der (bit {depth+1})"})
+				return
+			else:
+				self._insert_recursive(node.right, symbol, value, bits, depth + 1, animate)
 
 	def _promote_to_collision(self, node: ResidNode, animate: bool) -> None:
 		if animate:
@@ -299,6 +427,7 @@ class ResiduosTreeView(ttk.Frame):
 			self._anim_running = True
 			self._anim_step()
 		self.entry.delete(0, tk.END)
+		print(self._serialize_tree(self.root))
 		self._draw()
 
 	def _on_delete(self) -> None:
@@ -518,3 +647,101 @@ class ResiduosTreeView(ttk.Frame):
 				text = f"{node.symbol}\n{node.value}"
 			self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=fill, outline=outline, width=2)
 			self.canvas.create_text(x, y, text=text, fill="#000000", font=("MS Sans Serif", 9, "bold"))
+
+	def _split_node(self,
+					node: ResidNode,
+					existing_symbol: str, existing_value: int, existing_bits: str,
+					new_symbol: str, new_value: int, new_bits: str,
+					depth: int, animate: bool) -> None:
+		"""
+		Construye, a partir del `node` (que debe ser convertido a LINK antes),
+		la bifurcacion necesaria encontrando el primer bit distinto desde `depth`.
+		Inserta las dos hojas en los lados correspondientes.
+		"""
+
+		# Encuentra la primer posicion donde difieren (o donde uno se acaba)
+		max_len = max(len(existing_bits), len(new_bits))
+		split_pos = depth
+		while split_pos < max_len:
+			# Obtener bit en posicion i para cada cadena; si no existe, usamos None
+			b_exist = existing_bits[split_pos] if split_pos < len(existing_bits) else None
+			b_new = new_bits[split_pos] if split_pos < len(new_bits) else None
+
+			# Si son distintos (incluyendo el caso en que uno es None) => punto de bifurcacion
+			if b_exist != b_new:
+				break
+			split_pos += 1
+
+		# Si nunca difieren (caso raro: mismos bits), para evitar loop colocamos existing a la izquierda y new a la derecha
+		if split_pos >= max_len:
+			# crear una estructura simple con dos hojas deterministicas
+			node.left = ResidNode(NodeType.LEAF)
+			node.left.symbol = existing_symbol
+			node.left.value = existing_value
+			node.left.bits = existing_bits
+
+			node.right = ResidNode(NodeType.LEAF)
+			node.right.symbol = new_symbol
+			node.right.value = new_value
+			node.right.bits = new_bits
+			if animate:
+				self._anim_steps.append({"type": "collision", "message": "Colisión sin diferencia de bits, asignando deterministicamente izq/der"})
+			return
+
+		# Ahora en split_pos los bits son diferentes (o uno es None)
+		# Construimos la ruta desde 'depth' hasta 'split_pos' creando nodos LINK intermedios si hace falta
+		cur = node
+		for i in range(depth, split_pos):
+			# crear nodo intermedio (LINK) en la direccion correspondiente al bit común
+			# los bits en este rango son iguales para ambos, podemos tomar uno de ellos (preferimos existing si existe)
+			b = existing_bits[i] if i < len(existing_bits) else (new_bits[i] if i < len(new_bits) else '0')
+			if b == '0':
+				if cur.left is None:
+					cur.left = ResidNode(NodeType.LINK)
+				cur = cur.left
+			else:
+				if cur.right is None:
+					cur.right = ResidNode(NodeType.LINK)
+				cur = cur.right
+
+		# En split_pos los bits determinan lado para cada simbolo
+		b_exist = existing_bits[split_pos] if split_pos < len(existing_bits) else '0'
+		b_new = new_bits[split_pos] if split_pos < len(new_bits) else '0'
+
+		# Crear hojas en los lados respectivos; si ya hay nodo, sobreescribimos solo si es None
+		if b_exist == '0':
+			if cur.left is None:
+				cur.left = ResidNode(NodeType.LEAF)
+			cur.left.node_type = NodeType.LEAF
+			cur.left.symbol = existing_symbol
+			cur.left.value = existing_value
+			cur.left.bits = existing_bits
+		else:
+			if cur.right is None:
+				cur.right = ResidNode(NodeType.LEAF)
+			cur.right.node_type = NodeType.LEAF
+			cur.right.symbol = existing_symbol
+			cur.right.value = existing_value
+			cur.right.bits = existing_bits
+
+		if b_new == '0':
+			if cur.left is None:
+				cur.left = ResidNode(NodeType.LEAF)
+			else:
+				# Si ya ocupa la izquierda, crea un nivel extra deterministico hacia la izquierda
+				if cur.left.node_type != NodeType.LEAF:
+					pass
+			cur.left.node_type = NodeType.LEAF
+			cur.left.symbol = new_symbol
+			cur.left.value = new_value
+			cur.left.bits = new_bits
+		else:
+			if cur.right is None:
+				cur.right = ResidNode(NodeType.LEAF)
+			cur.right.node_type = NodeType.LEAF
+			cur.right.symbol = new_symbol
+			cur.right.value = new_value
+			cur.right.bits = new_bits
+
+		if animate:
+			self._anim_steps.append({"type": "split", "message": f"Separando en bit {split_pos+1}: {b_exist} vs {b_new}"})
