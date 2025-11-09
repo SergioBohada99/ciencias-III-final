@@ -541,7 +541,6 @@ class ResiduosTreeView(ttk.Frame):
 		self._prepare_animation()
 
 		self.entry.delete(0, tk.END)
-		print(self._serialize_tree(self.root))
 		self._draw()
 
 	def _on_delete(self) -> None:
