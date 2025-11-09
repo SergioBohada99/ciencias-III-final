@@ -100,12 +100,14 @@ class ResiduosTreeView(ttk.Frame):
 		self._anim_index: int = 0
 		self._anim_running: bool = False
 		self._highlight_nodes: List[ResidNode] = []
+		
+		#Edges
+		self._edge_hint: Optional[Tuple[ResidNode, ResidNode]] = None
 
 		# Undo
 		self._history: List[Dict[str, Any]] = []
 		self._max_history = 20
 		self.bind_all("<Control-z>", self._on_undo)
-
 		self._draw()
 		
 
@@ -172,56 +174,53 @@ class ResiduosTreeView(ttk.Frame):
 
 	def _insert_recursive(self, node: ResidNode, symbol: str, value: int, bits: str, depth: int, animate: bool) -> None:
 		"""
-		Insercion que:
-		- nunca convierte la raiz en hoja (root debe ser LINK)
-		- rechaza duplicados exactos (sin animacion)
-		- avanza por el prefijo comun y bifurca en el primer bit distinto
-		- mantiene pasos de animacion en puntos relevantes
+		Inserta (symbol, value, bits MSB→LSB) en el árbol:
+		- La raíz siempre permanece como LINK.
+		- Rechaza duplicados exactos.
+		- En colisión, busca el primer bit distinto a partir de `depth`,
+		crea el prefijo común y bifurca en ese punto.
+		- Emite pasos de animación con la arista exacta (parent -> child) en cada avance.
 		"""
-		# Aseguramos que, si estamos en depth 0, el nodo sea LINK (raiz siempre LINK)
+		# Asegurar que la raíz (depth==0) sea LINK
 		if depth == 0 and node.node_type != NodeType.LINK:
 			node.node_type = NodeType.LINK
 			node.symbol = None
 			node.value = None
 			node.bits = None
 
-		# --- Caso: Nodo hoja (posible colision o duplicado) ---
+		# ========== CASO: NODO HOJA ==========
 		if node.node_type == NodeType.LEAF:
-			# Duplicado exacto -> rechazar (sin animacion)
+			# Duplicado exacto -> no insertar
 			if node.bits == bits:
 				messagebox.showwarning("Duplicado", f"{symbol} ya existe, no se inserta")
 				return
 
-			# Colision: encontramos el primer bit distinto (AHORA desde 'depth')
 			existing_symbol = node.symbol or ""
 			existing_value = node.value or 0
 			existing_bits = node.bits or ""
 
 			if animate:
-				self._anim_steps.append({"type": "collision", "message": f"Colisión: {existing_symbol} vs {symbol} — buscando bit distinto"})
+				self._anim_steps.append({"type": "collision", "message": f"Colisión: {existing_symbol} vs {symbol} — buscando primer bit distinto"})
 
+			# Buscar primer índice distinto desde 'depth'
 			max_len = max(len(existing_bits), len(bits))
-
-			# <<< CORRECCIÓN: empezar la búsqueda en 'depth', no en 0 >>>
 			diff_index = depth
 			while diff_index < max_len:
 				b_exist = existing_bits[diff_index] if diff_index < len(existing_bits) else '0'
-				b_new = bits[diff_index] if diff_index < len(bits) else '0'
+				b_new   = bits[diff_index]           if diff_index < len(bits)           else '0'
 				if b_exist != b_new:
 					break
 				diff_index += 1
 
-			# Convertir este nodo en LINK (vaciar datos)
+			# Convertir este nodo en LINK (se reinsertan como hojas abajo)
 			node.node_type = NodeType.LINK
 			node.symbol = None
 			node.value = None
 			node.bits = None
 
-			# Si no encontramos diferencia (muy raro) -> asignacion deterministica
+			# Caso extremo: no se encontró diferencia (misma secuencia efectiva de bits)
 			if diff_index >= max_len:
-				if animate:
-					self._anim_steps.append({"type": "split", "message": "Bits iguales hasta el final: asignando determinísticamente izq/der"})
-				# existing -> left, new -> right
+				# Determinista: existing->left, new->right
 				node.left = ResidNode(NodeType.LEAF)
 				node.left.symbol = existing_symbol
 				node.left.value = existing_value
@@ -231,63 +230,75 @@ class ResiduosTreeView(ttk.Frame):
 				node.right.symbol = symbol
 				node.right.value = value
 				node.right.bits = bits
+
+				if animate:
+					self._anim_steps.append({"type": "split", "message": "Bits iguales hasta el final: asignando izq/der determinísticamente"})
+					self._add_edge_step(node, node.left,  f"Colocar {existing_symbol} a la IZQ", "leaf")
+					self._add_edge_step(node, node.right, f"Colocar {symbol} a la DER", "leaf")
 				return
 
-			# Construir la ruta de prefijo común desde 'node' hasta diff_index-1
+			# Construir prefijo común desde 'depth' hasta 'diff_index - 1'
 			cur = node
 			for i in range(depth, diff_index):
-				# bit comun (si uno se acaba usamos el que exista, por convención '0')
-				b_common = (existing_bits[i] if i < len(existing_bits) else ('0' if i >= len(bits) else bits[i]))
-				# crear enlace si hace falta
+				# Bit común (si alguno no alcanza, usamos el que exista; por convención '0')
+				b_common = existing_bits[i] if i < len(existing_bits) else (bits[i] if i < len(bits) else '0')
+
+				# Crear/usar el enlace correspondiente y registrar paso de arista
 				if b_common == '0':
 					if cur.left is None:
 						cur.left = ResidNode(NodeType.LINK)
+					if animate:
+						self._add_edge_step(cur, cur.left, f"Prefijo, bit {i+1} = 0 → IZQ", "traverse")
 					cur = cur.left
 				else:
 					if cur.right is None:
 						cur.right = ResidNode(NodeType.LINK)
+					if animate:
+						self._add_edge_step(cur, cur.right, f"Prefijo, bit {i+1} = 1 → DER", "traverse")
 					cur = cur.right
-				if animate:
-					# mostramos el bit absoluto (i+1)
-					self._anim_steps.append({"type": "traverse", "message": f"Prefijo, bit {i+1} = {b_common} → {'izq' if b_common == '0' else 'der'}"})
 
-			# En diff_index los bits difieren (usar '0' por defecto si alguno se acaba)
+			# En diff_index hay diferencia (o uno terminó)
 			b_exist = existing_bits[diff_index] if diff_index < len(existing_bits) else '0'
-			b_new = bits[diff_index] if diff_index < len(bits) else '0'
+			b_new   = bits[diff_index]           if diff_index < len(bits)           else '0'
 
-			# Crear hojas en los lados correspondientes
+			# Colocar existing
 			if b_exist == '0':
 				cur.left = ResidNode(NodeType.LEAF)
 				cur.left.symbol = existing_symbol
 				cur.left.value = existing_value
 				cur.left.bits = existing_bits
+				if animate:
+					self._add_edge_step(cur, cur.left, f"Separación en bit {diff_index+1}: existing → IZQ (0)", "leaf")
 			else:
 				cur.right = ResidNode(NodeType.LEAF)
 				cur.right.symbol = existing_symbol
 				cur.right.value = existing_value
 				cur.right.bits = existing_bits
+				if animate:
+					self._add_edge_step(cur, cur.right, f"Separación en bit {diff_index+1}: existing → DER (1)", "leaf")
 
+			# Colocar new
 			if b_new == '0':
-				# si hay colision en la misma posicion (raro), sobreescribimos/garantizamos hoja
+				# Si coincide con existing y ya ocupó, garantizamos hoja (sobrescribe seguro porque acabamos de crear el otro lado)
 				cur.left = cur.left or ResidNode(NodeType.LEAF)
 				cur.left.node_type = NodeType.LEAF
 				cur.left.symbol = symbol
 				cur.left.value = value
 				cur.left.bits = bits
+				if animate:
+					self._add_edge_step(cur, cur.left, f"Separación en bit {diff_index+1}: {symbol} → IZQ (0)", "leaf")
 			else:
 				cur.right = cur.right or ResidNode(NodeType.LEAF)
 				cur.right.node_type = NodeType.LEAF
 				cur.right.symbol = symbol
 				cur.right.value = value
 				cur.right.bits = bits
-
-			if animate:
-				self._anim_steps.append({"type": "split", "message": f"Separando en bit {diff_index + 1}: {b_exist} vs {b_new}"})
+				if animate:
+					self._add_edge_step(cur, cur.right, f"Separación en bit {diff_index+1}: {symbol} → DER (1)", "leaf")
 			return
 
-		# --- Caso: Nodo enlace (LINK) ---
-		# Si ya superamos la longitud de bits (poco probable si usas 5 bits fijos),
-		# colocamos la hoja de forma determinista en la izquierda si está libre, si no en la derecha.
+		# ========== CASO: NODO ENLACE (LINK) ==========
+		# Si ya no quedan bits (muy raro con 5 bits fijos), ubicamos determinísticamente
 		if depth >= len(bits):
 			if node.left is None:
 				node.left = ResidNode(NodeType.LEAF)
@@ -295,7 +306,7 @@ class ResiduosTreeView(ttk.Frame):
 				node.left.value = value
 				node.left.bits = bits
 				if animate:
-					self._anim_steps.append({"type": "leaf", "message": f"Insertar {symbol} en left (depth final)"})
+					self._add_edge_step(node, node.left, f"Sin más bits: colocar {symbol} a la IZQ", "leaf")
 				return
 			elif node.right is None:
 				node.right = ResidNode(NodeType.LEAF)
@@ -303,30 +314,30 @@ class ResiduosTreeView(ttk.Frame):
 				node.right.value = value
 				node.right.bits = bits
 				if animate:
-					self._anim_steps.append({"type": "leaf", "message": f"Insertar {symbol} en right (depth final)"})
+					self._add_edge_step(node, node.right, f"Sin más bits: colocar {symbol} a la DER", "leaf")
 				return
 			else:
-				# Ambos ocupados: continuar por la izquierda de forma determinista
+				# Ambos ocupados: bajar por la izquierda de forma determinista
+				if animate and node.left is not None:
+					self._add_edge_step(node, node.left, "Descender determinísticamente por la IZQ", "traverse")
 				if node.left is not None:
-					self._insert_recursive(node.left, symbol, value, bits, depth + 1, animate)
+					self._insert_recursive(node.left, symbol, value, bits, depth, animate)
 				return
 
-		# Normal: tomamos el bit actual y descendemos/insertamos
+		# Bit actual y descenso normal
 		bit = bits[depth]
-		if animate:
-			self._anim_steps.append({"type": "traverse", "message": f"Bit {depth + 1} = {bit} → {'derecha' if bit == '1' else 'izquierda'}"})
-
 		if bit == '0':
 			if node.left is None:
-				# insertar hoja directamente en esa posicion
 				node.left = ResidNode(NodeType.LEAF)
 				node.left.symbol = symbol
 				node.left.value = value
 				node.left.bits = bits
 				if animate:
-					self._anim_steps.append({"type": "leaf", "message": f"Insertar {symbol} en izq (bit {depth+1})"})
+					self._add_edge_step(node, node.left, f"Bit {depth+1} = 0 → insertar {symbol} en IZQ", "leaf")
 				return
 			else:
+				if animate:
+					self._add_edge_step(node, node.left, f"Bit {depth+1} = 0 → IZQ", "traverse")
 				self._insert_recursive(node.left, symbol, value, bits, depth + 1, animate)
 		else:
 			if node.right is None:
@@ -335,10 +346,13 @@ class ResiduosTreeView(ttk.Frame):
 				node.right.value = value
 				node.right.bits = bits
 				if animate:
-					self._anim_steps.append({"type": "leaf", "message": f"Insertar {symbol} en der (bit {depth+1})"})
+					self._add_edge_step(node, node.right, f"Bit {depth+1} = 1 → insertar {symbol} en DER", "leaf")
 				return
 			else:
+				if animate:
+					self._add_edge_step(node, node.right, f"Bit {depth+1} = 1 → DER", "traverse")
 				self._insert_recursive(node.right, symbol, value, bits, depth + 1, animate)
+
 
 	def _promote_to_collision(self, node: ResidNode, animate: bool) -> None:
 		if animate:
@@ -391,17 +405,34 @@ class ResiduosTreeView(ttk.Frame):
 
 	def _search_recursive(self, node: Optional[ResidNode], symbol: str, bits: str, depth: int, animate: bool) -> Optional[ResidNode]:
 		if node is None:
+			if animate:
+				self._anim_steps.append({"type": "not_found", "message": f"No hay nodo en profundidad {depth}"})
 			return None
+
 		if node.node_type == NodeType.LEAF:
-			return node if node.symbol == symbol else None
+			if node.symbol == symbol:
+				if animate:
+					self._anim_steps.append({"type": "found", "message": f"Encontrado '{symbol}' en hoja"})
+				return node
+			else:
+				if animate:
+					self._anim_steps.append({"type": "not_found", "message": f"Hoja distinta ({node.symbol}), no coincide"})
+				return None
+
 		if depth >= len(bits):
+			if animate:
+				self._anim_steps.append({"type": "not_found", "message": "Se agotaron los bits sin hallar la letra"})
 			return None
+
 		bit = bits[depth]
-		if animate:
-			self._anim_steps.append({"type": "traverse", "message": f"Bit {depth + 1} = {bit} → {'der' if bit == '1' else 'izq'}"})
+		# Decidir rama y empujar paso de arista si existe
 		if bit == '0':
+			if node.left is not None and animate:
+				self._add_edge_step(node, node.left, f"Bit {depth + 1} = 0 → izq", "traverse")
 			return self._search_recursive(node.left, symbol, bits, depth + 1, animate)
 		else:
+			if node.right is not None and animate:
+				self._add_edge_step(node, node.right, f"Bit {depth + 1} = 1 → der", "traverse")
 			return self._search_recursive(node.right, symbol, bits, depth + 1, animate)
 
 	def _remove_symbol(self, symbol: str) -> bool:
@@ -415,6 +446,92 @@ class ResiduosTreeView(ttk.Frame):
 			self._insert_symbol(s, animate=False)
 		return True
 
+	def _delete_symbol(self, symbol: str, animate: bool) -> bool:
+		"""
+		Elimina la hoja que contiene `symbol` sin reconfigurar el árbol.
+		Genera pasos de animación con aristas reales (parent->child).
+		Devuelve True si se eliminó, False si no se encontró.
+		"""
+		# Si no existe en el índice, animamos 'no encontrado'
+		if symbol not in self.symbols:
+			if animate:
+				self._anim_steps = [
+					{"type": "start", "message": f"Eliminar {symbol}: no existe en el índice"},
+					{"type": "not_found", "message": "Letra no encontrada"},
+				]
+			return False
+
+		value = self.symbols[symbol]
+		bits = self._value_to_bits_msb(value)
+
+		if animate:
+			self._anim_steps = [{"type": "start", "message": f"Eliminando {symbol} = {value} = {bits}₂"}]
+
+		# Buscar y eliminar exactamente la hoja
+		deleted = self._delete_recursive(self.root, parent=None, side=None,
+										symbol=symbol, bits=bits, depth=0, animate=animate)
+
+		if deleted:
+			# Actualiza índice de símbolos
+			try:
+				del self.symbols[symbol]
+			except KeyError:
+				pass
+			if animate:
+				self._anim_steps.append({"type": "deleted", "message": f"Eliminada '{symbol}'"})
+			return True
+		else:
+			if animate:
+				self._anim_steps.append({"type": "not_found", "message": "Letra no encontrada"})
+			return False
+		
+	def _delete_recursive(self,
+						node: Optional[ResidNode],
+						parent: Optional[ResidNode],
+						side: Optional[str],  # 'left' | 'right' | None (para la raíz)
+						symbol: str,
+						bits: str,
+						depth: int,
+						animate: bool) -> bool:
+		"""
+		Recorre siguiendo `bits` y elimina la hoja con `symbol` cuando la encuentra.
+		No reconfigura/comprime el árbol: solo quita el puntero a la hoja.
+		"""
+		# No hay nodo en este punto del camino
+		if node is None:
+			return False
+
+		# Caso hoja: compara símbolo
+		if node.node_type == NodeType.LEAF:
+			if node.symbol == symbol:
+				# Desenganchar del padre (o resetear raíz si fuera el único nodo)
+				if parent is None:
+					# Caso raro: raíz hoja; se deja la raíz como LINK vacío
+					self.root = ResidNode(NodeType.LINK)
+				else:
+					if side == 'left':
+						parent.left = None
+					elif side == 'right':
+						parent.right = None
+				return True
+			return False
+
+		# Si es LINK y se agotaron los bits (muy raro con 5 bits fijos), no hay hoja aquí
+		if depth >= len(bits):
+			return False
+
+		# Decidir rama por el bit actual y animar la arista si existe
+		bit = bits[depth]
+		if bit == '0':
+			if node.left is not None and animate:
+				self._add_edge_step(node, node.left, f"Bit {depth + 1} = 0 → izq", "traverse")
+			return self._delete_recursive(node.left, node, 'left', symbol, bits, depth + 1, animate)
+		else:
+			if node.right is not None and animate:
+				self._add_edge_step(node, node.right, f"Bit {depth + 1} = 1 → der", "traverse")
+			return self._delete_recursive(node.right, node, 'right', symbol, bits, depth + 1, animate)
+
+
 	def _on_insert(self) -> None:
 		ch = self._validate_char(self.entry.get().strip())
 		if not ch:
@@ -422,10 +539,7 @@ class ResiduosTreeView(ttk.Frame):
 		self._save_state()
 		self._insert_symbol(ch, animate=True)
 		self._prepare_animation()
-		if self._anim_steps:
-			self._anim_index = 0
-			self._anim_running = True
-			self._anim_step()
+
 		self.entry.delete(0, tk.END)
 		print(self._serialize_tree(self.root))
 		self._draw()
@@ -434,11 +548,21 @@ class ResiduosTreeView(ttk.Frame):
 		ch = self._validate_char(self.entry.get().strip())
 		if not ch:
 			return
+
 		self._save_state()
-		if not self._remove_symbol(ch):
-			messagebox.showinfo("Eliminar", "Letra no encontrada")
-		else:
+
+		# Construye pasos de animación y elimina solo la hoja (sin reconfigurar el árbol)
+		ok = self._delete_symbol(ch, animate=True)
+
+		# Preparar y lanzar animación
+		self._prepare_animation()
+
+		# Estado / UI inmediata (también habrá feedback al final de la animación)
+		if ok:
 			self.status.configure(text=f"Eliminada '{ch}'")
+		else:
+			self.status.configure(text="Letra no encontrada")
+
 		self.entry.delete(0, tk.END)
 		self._draw()
 
@@ -446,16 +570,18 @@ class ResiduosTreeView(ttk.Frame):
 		ch = self._validate_char(self.entry.get().strip())
 		if not ch:
 			return
-		res = self._search_symbol(ch, animate=True)
+		# Construir los pasos de animación, pero NO ejecutar todavía
+		result_node = self._search_symbol(ch, animate=True)
 		self._prepare_animation()
-		if self._anim_steps:
-			self._anim_index = 0
-			self._anim_running = True
-			self._anim_step()
-		if res is None:
-			# El message de no encontrado se muestra al final de la animación
-			pass
+		# Mostrar mensaje según resultado
+		if result_node is not None:
+			messagebox.showinfo("Búsqueda", f"Clave '{ch}' encontrada ✅")
+			self.status.configure(text=f"Clave '{ch}' encontrada. Animación lista (usa ▶ Reproducir o Paso).")
+		else:
+			messagebox.showinfo("Búsqueda", f"Clave '{ch}' no encontrada ❌")
+			self.status.configure(text=f"Clave '{ch}' no encontrada. Animación lista (usa ▶ Reproducir o Paso).")
 		self.entry.delete(0, tk.END)
+		self._draw()
 
 	def _on_reset(self) -> None:
 		self._save_state()
@@ -481,19 +607,42 @@ class ResiduosTreeView(ttk.Frame):
 		self._anim_index = 0
 		self._anim_running = False
 		self._highlight_nodes = []
+		self._edge_hint = None
 		self.status.configure(text=f"Animación lista: {len(self._anim_steps)} pasos")
+
+	def _add_edge_step(self, parent: ResidNode, child: Optional[ResidNode], message: str, step_type: str = "traverse") -> None:
+		"""
+		Registra un paso de animación para una arista concreta (parent->child).
+		Si child es None, no agrega el edge (pero sí el mensaje).
+		"""
+		if child is not None:
+			self._anim_steps.append({"type": step_type, "edge": (parent, child), "message": message})
+		else:
+			self._anim_steps.append({"type": step_type, "message": message})
 
 	def _anim_step(self) -> None:
 		if self._anim_index >= len(self._anim_steps):
 			self._anim_running = False
 			self.status.configure(text="Animación terminada")
-			if self._anim_steps and self._anim_steps[-1].get("type") == "not_found":
-				messagebox.showinfo("Búsqueda", "Letra no encontrada")
+			# Mensajería final
+			if self._anim_steps:
+				last = self._anim_steps[-1]
+				if last.get("type") == "found":
+					messagebox.showinfo("Búsqueda", "Clave encontrada")
+				elif last.get("type") == "not_found":
+					messagebox.showinfo("Búsqueda", "Letra no encontrada")
 			return
+
 		step = self._anim_steps[self._anim_index]
 		self.status.configure(text=step.get("message", ""))
+
+		# Arista actual a resaltar (solo una por frame)
+		edge = step.get("edge")
+		self._edge_hint = edge if edge else None
+
 		self._draw()
 		self._anim_index += 1
+
 		if self._anim_running and self._anim_index < len(self._anim_steps):
 			self.after(1200, self._anim_step)
 
@@ -582,23 +731,56 @@ class ResiduosTreeView(ttk.Frame):
 			return
 		self.status.configure(text="Árbol cargado")
 		self._draw()
-
 	def _draw(self) -> None:
+		# Evita fallar si el canvas aún no está listo
+		if not hasattr(self, "canvas"):
+			return
+
 		self.canvas.delete("all")
 		self.canvas.update_idletasks()
+
 		width = max(self.canvas.winfo_width(), 600)
 		height = max(self.canvas.winfo_height(), 420)
+
 		# Árbol vacío
-		if self.root.node_type == NodeType.LINK and self.root.left is None and self.root.right is None and self.root.symbol is None:
-			self.canvas.create_text(width // 2, height // 2, text="Inserte letras para construir el árbol", fill="#666666", font=("MS Sans Serif", 12))
+		if (self.root.node_type == NodeType.LINK and
+			self.root.left is None and self.root.right is None and
+			self.root.symbol is None):
+			self.canvas.create_text(
+				width // 2, height // 2,
+				text="Inserte letras para construir el árbol",
+				fill="#666666", font=("MS Sans Serif", 12)
+			)
 			return
-		# Calcular posiciones
+
+		# Calcular posiciones y dibujar
 		positions: Dict[ResidNode, Tuple[int, int]] = {}
 		self._layout(self.root, width // 2, 40, width // 4, positions)
-		# Dibujar aristas
 		self._draw_edges(self.root, positions)
-		# Dibujar nodos
 		self._draw_nodes(positions)
+
+	def _draw_edges(self, node: Optional[ResidNode], positions: Dict[ResidNode, Tuple[int, int]]) -> None:
+		if node is None:
+			return
+
+		if node.left:
+			x, y = positions[node]
+			xl, yl = positions[node.left]
+			# Color por arista activa:
+			color = "#4da3ff" if (self._edge_hint and self._edge_hint[0] is node and self._edge_hint[1] is node.left) else "#808080"
+			self.canvas.create_line(x, y, xl, yl, fill=color, width=2)
+			mx, my = (x + xl) // 2, (y + yl) // 2
+			self.canvas.create_text(mx - 10, my, text="0", fill="#000000", font=("MS Sans Serif", 9, "bold"))
+			self._draw_edges(node.left, positions)
+
+		if node.right:
+			x, y = positions[node]
+			xr, yr = positions[node.right]
+			color = "#4da3ff" if (self._edge_hint and self._edge_hint[0] is node and self._edge_hint[1] is node.right) else "#808080"
+			self.canvas.create_line(x, y, xr, yr, fill=color, width=2)
+			mx, my = (x + xr) // 2, (y + yr) // 2
+			self.canvas.create_text(mx + 10, my, text="1", fill="#000000", font=("MS Sans Serif", 9, "bold"))
+			self._draw_edges(node.right, positions)
 
 	def _layout(self, node: Optional[ResidNode], x: int, y: int, dx: int, positions: Dict[ResidNode, Tuple[int, int]]) -> None:
 		if node is None:
@@ -609,26 +791,6 @@ class ResiduosTreeView(ttk.Frame):
 			child_dx = max(30, dx // 2)
 			self._layout(node.left, x - dx, child_y, child_dx, positions)
 			self._layout(node.right, x + dx, child_y, child_dx, positions)
-
-	def _draw_edges(self, node: Optional[ResidNode], positions: Dict[ResidNode, Tuple[int, int]]) -> None:
-		if node is None:
-			return
-		if node.left:
-			x, y = positions[node]
-			xl, yl = positions[node.left]
-			color = "#808080"
-			self.canvas.create_line(x, y, xl, yl, fill=color, width=2)
-			mx, my = (x + xl) // 2, (y + yl) // 2
-			self.canvas.create_text(mx - 10, my, text="0", fill="#000000", font=("MS Sans Serif", 9, "bold"))
-			self._draw_edges(node.left, positions)
-		if node.right:
-			x, y = positions[node]
-			xr, yr = positions[node.right]
-			color = "#808080"
-			self.canvas.create_line(x, y, xr, yr, fill=color, width=2)
-			mx, my = (x + xr) // 2, (y + yr) // 2
-			self.canvas.create_text(mx + 10, my, text="1", fill="#000000", font=("MS Sans Serif", 9, "bold"))
-			self._draw_edges(node.right, positions)
 
 	def _draw_nodes(self, positions: Dict[ResidNode, Tuple[int, int]]) -> None:
 		r = 18

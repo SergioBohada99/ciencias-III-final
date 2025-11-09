@@ -40,7 +40,12 @@ class InternasView(ttk.Frame):
 		btn_residuos = ttk.Button(
 			panel, text="Árbol de residuos", style="Retro.TButton", command=lambda: app.navigate("residuos_tree")
 		)
-		btn_residuos.grid(row=1, column=1, padx=10, pady=10, columnspan=3, sticky="ew")
+		btn_residuos.grid(row=1, column=1, padx=10, pady=10, columnspan=1, sticky="ew")
+
+		btn_residuos_multiples = ttk.Button(
+			panel, text="Árbol de residuos Multiples", style="Retro.TButton", command=lambda: app.navigate("residuos_multiples")
+		)
+		btn_residuos_multiples.grid(row=1, column=2, padx=10, pady=10, columnspan=2, sticky="ew")
 
 		back = ttk.Button(self, text="← Volver", command=lambda: app.navigate("busquedas"))
 		back.pack(pady=10)

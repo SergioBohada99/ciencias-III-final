@@ -38,7 +38,7 @@ class RetroApp:
 		from app.views.residuos_tree_view import ResiduosTreeView
 		from app.views.bloques_binaria_view import BloquesBinariaView
 		from app.views.transformacion_view import TransformacionClavesView
- 
+
 
 		available_views: Dict[str, Type[tk.Frame]] = {
 			"home": HomeView,
@@ -50,7 +50,7 @@ class RetroApp:
 			"hash": HashView,
 			"trie": TrieView,
 			"huffman": HuffmanView,
-			"residuos": ResiduosMultiplesView,
+			"residuos_multiples": ResiduosMultiplesView,
 			"grafos": GrafosView,
 			"bloques": BloquesView,
 			"binario_ext": BloquesBinariaView,

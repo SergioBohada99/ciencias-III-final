@@ -195,45 +195,29 @@ class ResiduosMultiplesView(ttk.Frame):
 		bits = self._letter_to_bits(ch, d)
 		if bits is None:
 			return
-		
-		# Debug: mostrar la conversión
-		print(f"Letra {ch.upper()} -> bits: {bits}")
-		
-		# Navegar hasta el nodo final del esqueleto preconstruido
-		self._path_highlight = []
-		chunks = self._chunk_bits(bits, m)
-		print(f"Chunks: {chunks}")
-		
-		node = self.root
-		path_valid = True
-		
-		# Construir el path highlight para la animación
-		for depth, chunk in enumerate(chunks, start=1):
-			self._path_highlight.append((depth, chunk))
-			if chunk in node.children:
-				node = node.children[chunk]
-				print(f"Navegando a nivel {depth} con chunk '{chunk}' - OK")
-			else:
-				print(f"ERROR: No existe chunk '{chunk}' en nivel {depth}")
-				path_valid = False
-				break
-		
-		if not path_valid:
+
+		# Ruta como aristas reales
+		edges, nodes_path = self._build_path_edges_from_bits(bits, m)
+		if not edges and len(bits) > 0:
 			self.status.configure(text="Error en la navegación del árbol")
 			return
-		
-		# Verificar si el nodo final ya tiene una letra
-		if not node.is_end or node.value is None:
-			node.is_end = True
-			node.value = ch.upper()
+
+		# Nodo final de la ruta
+		end_node = nodes_path[-1] if nodes_path else self.root
+
+		# Insertar letra si no está ocupada
+		if not end_node.is_end or end_node.value is None:
+			end_node.is_end = True
+			end_node.value = ch.upper()
 			self._insert_order.append(ch.upper())
-			self.status.configure(text=f"Insertado {ch.upper()} - chunks: {chunks}")
-			print(f"Letra {ch.upper()} insertada correctamente")
+			self.status.configure(text=f"Insertado {ch.upper()} - chunks: {self._chunk_bits(bits, m)}")
 		else:
-			self.status.configure(text=f"Posición ocupada por {node.value}")
-		
-		self._prepare_animation(delete=False)
+			self.status.configure(text=f"Posición ocupada por {end_node.value}")
+
+		# Preparar animación con aristas exactas (no es delete)
+		self._prepare_animation_from_edges(edges, delete=False)
 		self._draw()
+
 
 	def _on_search(self) -> None:
 		d = self._read_digits()
@@ -242,30 +226,24 @@ class ResiduosMultiplesView(ttk.Frame):
 		bits = self._letter_to_bits(ch, d)
 		if bits is None:
 			return
-		# Check root
-		if self.root.is_end and (self.root.value or "").upper() == ch.upper():
-			self._path_highlight = [(0, '')]
-			self.status.configure(text="Encontrado en raíz")
-			self._prepare_animation(delete=False)
+
+		edges, nodes_path = self._build_path_edges_from_bits(bits, m)
+		if not edges:
+			self.status.configure(text="No encontrado")
+			messagebox.showinfo("Búsqueda", "Valor no encontrado")
+			self._prepare_animation_from_edges([], delete=False)
 			return
-		node = self.root
-		self._path_highlight = []
-		for depth, chunk in enumerate(self._chunk_bits(bits, m), start=1):
-			self._path_highlight.append((depth, chunk))
-			next_node = node.children.get(chunk)
-			if not next_node:
-				self.status.configure(text="No encontrado")
-				messagebox.showinfo("Búsqueda", "Valor no encontrado")
-				self._prepare_animation(delete=False)
-				return
-			node = next_node
-			if node.is_end and (node.value or "").upper() == ch.upper():
-				self.status.configure(text=f"Encontrado en profundidad {depth}")
-				self._prepare_animation(delete=False)
-				return
-		self.status.configure(text="No encontrado")
-		messagebox.showinfo("Búsqueda", "Valor no encontrado")
-		self._prepare_animation(delete=False)
+
+		end_node = nodes_path[-1]
+		if end_node.is_end and (end_node.value or "").upper() == ch.upper():
+			self.status.configure(text=f"Encontrado en profundidad {len(edges)}")
+			messagebox.showinfo("Búsqueda", f"Clave '{ch.upper()}' encontrada ✅")
+			self._prepare_animation_from_edges(edges, delete=False)
+		else:
+			self.status.configure(text="No encontrado")
+			messagebox.showinfo("Búsqueda", f"Clave '{ch.upper()}' no encontrada ❌")
+			self._prepare_animation_from_edges(edges, delete=False)
+
 
 	def _on_delete(self) -> None:
 		d = self._read_digits()
@@ -274,44 +252,42 @@ class ResiduosMultiplesView(ttk.Frame):
 		bits = self._letter_to_bits(ch, d)
 		if bits is None:
 			return
-		# Root case
+
+		# Caso raíz (por completitud; normalmente no habrá letra en root)
 		if self.root.is_end and (self.root.value or "").upper() == ch.upper():
-			self._path_highlight = [(0, '')]
-			self._delete_highlight = self._path_highlight[-1]
 			try:
 				self._insert_order.remove(ch.upper())
 			except ValueError:
 				pass
 			self._rebuild_from_order()
 			self.status.configure(text="Eliminado de raíz y reordenado")
-			self._prepare_animation(delete=True)
+			self._prepare_animation_from_edges([], delete=True)
 			return
-		node = self.root
-		self._path_highlight = []
-		path_nodes: List[Tuple[ResiduoNode, str]] = []
-		for depth, chunk in enumerate(self._chunk_bits(bits, m), start=1):
-			self._path_highlight.append((depth, chunk))
-			next_node = node.children.get(chunk)
-			if not next_node:
-				self.status.configure(text="No encontrado")
-				messagebox.showinfo("Búsqueda", "Valor no encontrado")
-				self._prepare_animation(delete=False)
-				return
-			path_nodes.append((node, chunk))
-			node = next_node
-			if node.is_end and (node.value or "").upper() == ch.upper():
-				self._delete_highlight = self._path_highlight[-1]
-				try:
-					self._insert_order.remove(ch.upper())
-				except ValueError:
-					pass
-				self._rebuild_from_order()
-				self.status.configure(text=f"Eliminado en profundidad {depth} y reordenado")
-				self._prepare_animation(delete=True)
-				return
-		self.status.configure(text="No encontrado")
-		messagebox.showinfo("Búsqueda", "Valor no encontrado")
-		self._prepare_animation(delete=False)
+
+		edges, nodes_path = self._build_path_edges_from_bits(bits, m)
+		if not edges:
+			self.status.configure(text="No encontrado")
+			messagebox.showinfo("Búsqueda", "Valor no encontrado")
+			self._prepare_animation_from_edges([], delete=False)
+			return
+
+		end_node = nodes_path[-1]
+		if end_node.is_end and (end_node.value or "").upper() == ch.upper():
+			# Quitar de orden e iniciar reconstrucción
+			try:
+				self._insert_order.remove(ch.upper())
+			except ValueError:
+				pass
+			# Reconstruir esqueleto + reinsertar todo lo demás
+			self._rebuild_from_order()
+			self.status.configure(text=f"Eliminado en profundidad {len(edges)} y reordenado")
+			# Animación de la ruta usada para llegar
+			self._prepare_animation_from_edges(edges, delete=True)
+		else:
+			self.status.configure(text="No encontrado")
+			messagebox.showinfo("Búsqueda", "Valor no encontrado")
+			self._prepare_animation_from_edges(edges, delete=False)
+
 
 	def _insert_value_internal(self, ch: str) -> None:
 		# Inserta sin efectos de UI - navega hasta el nodo final y lo marca
@@ -431,12 +407,12 @@ class ResiduosMultiplesView(ttk.Frame):
 		if self._anim_index >= len(self._anim_steps):
 			self._anim_running = False
 			return
-		item = self._anim_steps[self._anim_index]
-		is_delete_step = self._anim_delete and item == (self._delete_highlight or ())
-		self._draw(path_hint=item, delete=is_delete_step)
+		parent, child = self._anim_steps[self._anim_index]
+		self._draw(edge_hint=(parent, child), delete=self._anim_delete)
 		self._anim_index += 1
 		if self._anim_running and self._anim_index < len(self._anim_steps):
 			self.after(700, self._anim_step)
+
 
 	def _on_play(self) -> None:
 		if not self._anim_steps:
@@ -458,56 +434,158 @@ class ResiduosMultiplesView(ttk.Frame):
 		self._anim_index = 0
 		self._draw()
 
-	def _draw(self, path_hint: Optional[Tuple[int, str]] = None, delete: bool = False) -> None:
+	def _draw(self, edge_hint: Optional[Tuple['ResiduoNode', 'ResiduoNode']] = None, delete: bool = False) -> None:
 		self.canvas.delete("all")
-		depth_gap = 80
+
+		# --- parámetros de layout ---
 		node_radius = 16
-		width = self.canvas.winfo_width() or self.canvas.winfo_reqwidth()
-		# Position map for nodes
+		min_sep_px = 3 * node_radius        # separación mínima entre centros de nodos hermanos
+		margin_x = 32 + node_radius
+		margin_y = 32 + node_radius
+		level_gap_min = 80                   # separación mínima vertical entre niveles
+
+		# Recolectar stats del árbol (profundidad máxima) y calcular spans (ancho en unidades)
+		spans: Dict[ResiduoNode, int] = {}
+		depths: Dict[ResiduoNode, int] = {}
+
+		def dfs_depth(node: ResiduoNode, depth: int) -> int:
+			depths[node] = depth
+			if not node.children:
+				return depth
+			return max(dfs_depth(ch, depth + 1) for ch in node.children.values())
+
+		max_depth = dfs_depth(self.root, 0)
+
+		def dfs_span(node: ResiduoNode) -> int:
+			# ancho en "unidades" = 1 si es hoja; si no, suma de spans de hijos
+			if not node.children:
+				spans[node] = 1
+				return 1
+			s = 0
+			for k in sorted(node.children.keys()):
+				s += dfs_span(node.children[k])
+			spans[node] = max(1, s)
+			return spans[node]
+
+		dfs_span(self.root)
+
+		# Convertir "unidades" a píxeles con escalado para que quepa en el canvas
+		width = max(self.canvas.winfo_width(), self.canvas.winfo_reqwidth())
+		height = max(self.canvas.winfo_height(), self.canvas.winfo_reqheight())
+
+		total_units = spans[self.root]
+		# espacio horizontal disponible
+		avail_w = max(1, width - 2 * margin_x)
+		# px por unidad, respetando separación mínima entre nodos
+		unit_px = max(min_sep_px, avail_w / max(1, total_units))
+		# recalcular separación vertical para que quepa en altura
+		levels = max_depth + 1
+		avail_h = max(1, height - 2 * margin_y)
+		depth_gap = max(level_gap_min, avail_h / max(1, levels - 1)) if levels > 1 else 0
+
+		# Segunda pasada: asignar X centrando cada subárbol en su intervalo
 		positions: Dict[ResiduoNode, Tuple[int, int, int]] = {}
-		edges: List[Tuple[ResiduoNode, ResiduoNode, str, int]] = []
+		edges: List[Tuple[ResiduoNode, ResiduoNode, str, int, int]] = []  # + child idx para etiquetas
 
-		def layout(node: ResiduoNode, depth: int, x: int) -> None:
-			y = 40 + depth * depth_gap
-			positions[node] = (x, y, depth)
-			children_keys = sorted(node.children.keys())
-			if not children_keys:
-				return
-			# spacing adapts to number of children
-			base = max(60, width // 4)
-			dx = max(40, base // max(1, len(children_keys)))
-			start_x = x - dx * (len(children_keys) - 1) // 2
-			for idx, chunk in enumerate(children_keys):
-				child = node.children[chunk]
-				cx = start_x + idx * dx
-				edges.append((node, child, chunk, depth))
-				layout(child, depth + 1, cx)
+		def assign_x(node: ResiduoNode, left_unit: float) -> float:
+			"""
+			Asigna X al centro del intervalo [left_unit, left_unit + spans[node])
+			Devuelve el left_unit final tras distribuir a los hijos.
+			"""
+			span_u = spans[node]
+			# centro del nodo en unidades:
+			center_u = left_unit + span_u / 2.0
+			x_px = int(margin_x + center_u * unit_px)
+			y_px = int(margin_y + depths[node] * depth_gap)
+			positions[node] = (x_px, y_px, depths[node])
 
-		# Root centered
-		layout(self.root, 0, (width // 2))
+			# distribuir hijos, uno tras otro en sus intervalos consecutivos
+			cur_left = left_unit
+			if node.children:
+				for idx, k in enumerate(sorted(node.children.keys())):
+					child = node.children[k]
+					child_span = spans[child]
+					# intervalo del hijo
+					child_left = cur_left
+					cur_left += child_span
+					# asignar al hijo en su intervalo
+					assign_x(child, child_left)
+					edges.append((node, child, k, depths[node], idx))
+			return left_unit + span_u
 
-		# Draw edges with chunk labels
-		for parent, child, chunk, depth in edges:
+		assign_x(self.root, 0.0)
+
+		# --- Dibujo de aristas ---
+		for parent, child, chunk, depth, idx in edges:
 			px, py, _ = positions[parent]
 			cx, cy, _ = positions[child]
+
 			color = "#808080"
-			if path_hint and path_hint[0] == depth + 1 and path_hint[1] == chunk:
-				color = "#ff6666" if delete else "#4da3ff"
-			self.canvas.create_line(px, py, cx, cy, fill=color, width=2)
-			mx = (px + cx) // 2
-			my = (py + cy) // 2
-			self.canvas.create_text(mx, my - 10, text=chunk, fill="#000000", font=("MS Sans Serif", 9, "bold"))
+			if edge_hint is not None:
+				if parent is edge_hint[0] and child is edge_hint[1]:
+					color = "#ff6666" if delete else "#4da3ff"
 
-		# Draw nodes
-		for node, (x, y, depth) in positions.items():
-			fill = "#bdbdbd"
-			outline = "#808080"
-			if path_hint and path_hint[0] == depth:
-				fill = "#ff6666" if delete else "#4da3ff"
-				outline = "#255eaa"
-			self.canvas.create_oval(x - node_radius, y - node_radius, x + node_radius, y + node_radius, fill=fill, outline=outline, width=2)
-			if node.is_end:
-				text = node.value if node.value else "*"
-				self.canvas.create_text(x, y, text=text, fill="#000000", font=("MS Sans Serif", 10, "bold"))
+			# línea suavizada (curva sutil)
+			midx = (px + cx) // 2
+			c1y = py + int(0.35 * (cy - py))
+			c2y = py + int(0.65 * (cy - py))
+			self.canvas.create_line(px, py, midx, c1y, cx, cy, fill=color, width=2, smooth=True)
+
+			# Etiqueta del chunk: alternar pequeño offset vertical para evitar colisiones
+			label_offset = -12 if (idx % 2 == 0) else -24
+			self.canvas.create_text(midx, c1y + label_offset, text=chunk,
+									fill="#000000", font=("MS Sans Serif", 9, "bold"))
+
+			# --- Dibujo de nodos ---
+			for node, (x, y, depth) in positions.items():
+				fill = "#bdbdbd"
+				outline = "#808080"
+
+				# Si estamos animando una arista, resalta solo el nodo destino (child)
+				if edge_hint is not None and node is edge_hint[1]:
+					fill = "#ff6666" if delete else "#4da3ff"
+					outline = "#255eaa"
+
+				self.canvas.create_oval(
+					x - node_radius, y - node_radius,
+					x + node_radius, y + node_radius,
+					fill=fill, outline=outline, width=2
+				)
+
+				if node.is_end:
+					text = node.value if node.value else "*"
+					self.canvas.create_text(
+						x, y, text=text, fill="#000000",
+						font=("MS Sans Serif", 10, "bold")
+					)
 
 
+	def _build_path_edges_from_bits(self, bits: str, m: int) -> Tuple[List[Tuple[ResiduoNode, ResiduoNode, str, int]], List[ResiduoNode]]:
+		"""
+		Devuelve:
+		- edges: lista de aristas (parent, child, chunk, depth) para cada chunk recorrido
+		- nodes: nodos visitados en orden (incluye root y cada child sucesivo)
+		Si algún chunk no existe en el esqueleto, retorna listas vacías.
+		"""
+		edges: List[Tuple[ResiduoNode, ResiduoNode, str, int]] = []
+		nodes: List[ResiduoNode] = []
+
+		node = self.root
+		nodes.append(node)
+		for depth, chunk in enumerate(self._chunk_bits(bits, m), start=1):
+			child = node.children.get(chunk)
+			if not child:
+				return [], []
+			edges.append((node, child, chunk, depth))
+			nodes.append(child)
+			node = child
+		return edges, nodes
+	
+	def _prepare_animation_from_edges(self, edges: List[Tuple['ResiduoNode', 'ResiduoNode', str, int]], delete: bool = False) -> None:
+		# Guardamos solo (parent, child) para el draw
+		self._anim_steps = [(p, c) for (p, c, _chunk, _depth) in edges]
+		self._anim_index = 0
+		self._anim_delete = delete
+		self._anim_running = False
+		self._draw()
+		self.status.configure(text=f"Animación lista: {len(self._anim_steps)} pasos")
