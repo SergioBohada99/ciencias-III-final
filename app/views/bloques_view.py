@@ -267,30 +267,81 @@ class BloquesView(ttk.Frame):
 		
 		self._save_state()
 		
-		# Nueva lógica de llenado: llenar primero el bloque 0 hasta capacidad, luego los siguientes
-		target_block = -1
-		for i in range(len(self.blocks)):
-			if len(self.blocks[i]) < self.block_size:
-				target_block = i
-				break
-		if target_block == -1:
-			messagebox.showerror("Error", "Todos los bloques están llenos")
+		# Verificar si hay espacio total disponible
+		total_elements = sum(len(block) for block in self.blocks)
+		if total_elements >= self.n:
+			messagebox.showerror("Error", "La estructura está llena")
 			return
 		
-		# Insertar en posición correcta dentro del bloque
-		block = self.blocks[target_block]
-		pos = 0
-		while pos < len(block) and block[pos] < key:
-			pos += 1
+		# Encontrar la posición correcta en toda la estructura (como lista continua)
+		insert_position = 0
+		for block_idx, block in enumerate(self.blocks):
+			for pos, value in enumerate(block):
+				if key <= value:
+					# Encontramos la posición correcta
+					insert_block_idx = block_idx
+					insert_pos = pos
+					
+					# Insertar en la posición correcta
+					block.insert(insert_pos, key)
+					
+					# Si el bloque se desborda, desplazar elementos hacia adelante
+					if len(block) > self.block_size:
+						# El último elemento debe moverse al siguiente bloque
+						overflow_element = block.pop()
+						
+						# Buscar el siguiente bloque con espacio
+						next_block_idx = insert_block_idx + 1
+						while next_block_idx < len(self.blocks):
+							if len(self.blocks[next_block_idx]) < self.block_size:
+								# Insertar al inicio del siguiente bloque
+								self.blocks[next_block_idx].insert(0, overflow_element)
+								break
+							else:
+								# Este bloque también está lleno, desplazar su último elemento
+								next_overflow = self.blocks[next_block_idx].pop()
+								self.blocks[next_block_idx].insert(0, overflow_element)
+								overflow_element = next_overflow
+								next_block_idx += 1
+						else:
+							# No hay más bloques, crear uno nuevo si es posible
+							if len(self.blocks) < self.b:
+								self.blocks.append([overflow_element])
+							else:
+								# No se puede insertar más
+								messagebox.showerror("Error", "No hay espacio disponible")
+								return
+					
+					self.status.configure(text=f"Insertado registro {key} en bloque {insert_block_idx}")
+					self.entry_key.delete(0, tk.END)
+					self._draw()
+					return
+				insert_position += 1
+			insert_position += len(block)
 		
-		block.insert(pos, key)
+		# Si llegamos aquí, el valor va al final
+		# Buscar el último bloque con espacio
+		for block_idx in range(len(self.blocks)):
+			if len(self.blocks[block_idx]) < self.block_size:
+				self.blocks[block_idx].append(key)
+				self.status.configure(text=f"Insertado registro {key} en bloque {block_idx}")
+				self.entry_key.delete(0, tk.END)
+				self._draw()
+				return
 		
-		self.status.configure(text=f"Insertado registro {key} en bloque {target_block}")
+		# Si no hay espacio en ningún bloque existente, crear uno nuevo
+		if len(self.blocks) < self.b:
+			self.blocks.append([key])
+			self.status.configure(text=f"Insertado registro {key} en nuevo bloque {len(self.blocks)-1}")
+		else:
+			messagebox.showerror("Error", "No hay espacio disponible")
+			return
+		
 		self.entry_key.delete(0, tk.END)
 		self._draw()
 
 	def _on_delete(self) -> None:
-		"""Elimina un registro"""
+		"""Elimina un registro y reorganiza los elementos hacia atrás"""
 		_, _, digits = self._read_params()
 		key_str = self.entry_key.get().strip()
 		key = self._validate_key(key_str, digits)
@@ -300,15 +351,31 @@ class BloquesView(ttk.Frame):
 		self._save_state()
 		
 		# Buscar y eliminar la clave
+		found = False
 		for block_idx, block in enumerate(self.blocks):
 			if key in block:
 				block.remove(key)
+				found = True
 				self.status.configure(text=f"Eliminado registro {key} del bloque {block_idx}")
+				
+				# Reorganizar elementos hacia atrás para llenar espacios vacíos
+				# Recopilar todos los elementos restantes
+				all_elements = []
+				for b in self.blocks:
+					all_elements.extend(b)
+				
+				# Reorganizar en bloques manteniendo el orden
+				self.blocks = [[] for _ in range(self.b)]
+				for i, num in enumerate(all_elements):
+					block_idx_new = min(i // self.block_size, self.b - 1)
+					self.blocks[block_idx_new].append(num)
+				
 				self.entry_key.delete(0, tk.END)
 				self._draw()
 				return
 		
-		messagebox.showinfo("Búsqueda", "Registro no encontrado")
+		if not found:
+			messagebox.showinfo("Búsqueda", "Registro no encontrado")
 
 	def _on_search(self) -> None:
 		"""Realiza búsqueda por bloques"""
@@ -747,32 +814,71 @@ class BloquesView(ttk.Frame):
 		width = max(self.canvas.winfo_width(), 600)
 		height = max(self.canvas.winfo_height(), 400)
 		
-		# Configuración de grilla: hasta 4 bloques por fila
-		columns = 4
-		gap_x = 10
-		gap_y = 20
-		block_width = min(140, max(100, (width - 80 - gap_x * (columns - 1)) // columns))
+		# Configuración para una sola columna de bloques
+		block_width = min(200, max(150, width - 100))
 		cell_height = 25
+		gap_y = 15
+		start_x = (width - block_width) // 2
 		start_y = 50
 		max_bottom = start_y
 		
-		# Dibujar bloques en filas
-		for block_idx, block in enumerate(self.blocks):
-			row = block_idx // columns
-			col = block_idx % columns
-			# Número de bloques en esta fila para centrar
-			remaining = len(self.blocks) - row * columns
-			in_row = columns if remaining > columns else remaining
-			row_total_width = in_row * block_width + (in_row - 1) * gap_x
-			start_x_row = max(40, (width - row_total_width) // 2)
-			block_x = start_x_row + col * (block_width + gap_x)
-			block_y = start_y + row * ((30 + self.block_size * (cell_height + 2)) + gap_y)
+		# Determinar qué bloques mostrar
+		total_blocks = len(self.blocks)
+		blocks_to_draw: List[Optional[int]] = []
+		
+		if total_blocks <= 5:
+			# Mostrar todos los bloques cuando la estructura es pequeña
+			blocks_to_draw = list(range(total_blocks))
+		else:
+			# Encontrar el último bloque que tiene datos
+			last_block_with_data = -1
+			for i in range(total_blocks - 1, -1, -1):
+				if self.blocks[i]:
+					last_block_with_data = i
+					break
+			
+			# Índice máximo visible por defecto (primeros 5 bloques: 0..4)
+			initial_visible_end = 4
+			visible_end = initial_visible_end
+			
+			if last_block_with_data >= 0:
+				visible_end = max(visible_end, last_block_with_data)
+			
+			# Asegurar que el bloque resaltado sea visible
+			if self._highlight_block is not None:
+				visible_end = max(visible_end, min(self._highlight_block, total_blocks - 1))
+			
+			visible_end = min(visible_end, total_blocks - 1)
+			
+			blocks_to_draw = list(range(visible_end + 1))
+			
+			# Si todavía hay bloques ocultos, mostrar "..." y el último bloque
+			if visible_end < total_blocks - 1:
+				blocks_to_draw.append(None)
+				blocks_to_draw.append(total_blocks - 1)
+		
+		# Dibujar bloques en una sola columna
+		visual_idx = 0
+		for block_idx in blocks_to_draw:
+			if block_idx is None:
+				# Dibujar "..."
+				block_y = start_y + visual_idx * ((30 + self.block_size * (cell_height + 2)) + gap_y)
+				self.canvas.create_text(
+					start_x + block_width // 2, block_y + 15,
+					text="...", fill="#666666", font=("MS Sans Serif", 12, "bold")
+				)
+				visual_idx += 1
+				continue
+			
+			block = self.blocks[block_idx]
+			block_x = start_x
+			block_y = start_y + visual_idx * ((30 + self.block_size * (cell_height + 2)) + gap_y)
 			
 			# Color del bloque
 			block_color = "#4da3ff" if block_idx == self._highlight_block else "#e0e0e0"
 			outline_color = "#255eaa" if block_idx == self._highlight_block else "#808080"
 			
-		# Dibujar header del bloque
+			# Dibujar header del bloque
 			self.canvas.create_rectangle(
 				block_x, block_y, block_x + block_width, block_y + 30,
 				fill=block_color, outline=outline_color, width=2
@@ -809,6 +915,7 @@ class BloquesView(ttk.Frame):
 				cell_y += cell_height + 2
 			# Actualizar fondo máximo para scroll
 			max_bottom = max(max_bottom, cell_y)
+			visual_idx += 1
 		
 		# Información adicional
 		info_text = f"n={self.n}, B={self.b}, Tamaño de bloque={self.block_size}"

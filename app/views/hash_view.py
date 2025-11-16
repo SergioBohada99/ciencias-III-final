@@ -153,8 +153,8 @@ class HashView(ttk.Frame):
 		if not s.isdigit():
 			messagebox.showerror("Error", "La clave debe ser numérica.")
 			return None
-		if len(s) > d:
-			messagebox.showerror("Error", "Clave fuera de máximo dígito.")
+		if len(s) != d:
+			messagebox.showerror("Error", f"La clave debe tener exactamente {d} dígitos.")
 			return None
 		return int(s)
 
@@ -172,6 +172,7 @@ class HashView(ttk.Frame):
 		self._highlight = None
 		self._delete_index = None
 		max_value = max(1, 10 ** d - 1)
+		min_value = 0 if d == 1 else 10 ** (d - 1)
 		target = max(1, min(n, n // 2))
 		inserted = 0
 		seen = set()
@@ -179,7 +180,7 @@ class HashView(ttk.Frame):
 		max_attempts = max(50, target * 10)
 		while inserted < target and attempts < max_attempts:
 			attempts += 1
-			k = random.randint(0, max_value)
+			k = random.randint(min_value, max_value)
 			if k in seen:
 				continue
 			seen.add(k)
@@ -205,6 +206,13 @@ class HashView(ttk.Frame):
 		if sum(1 for v in self._table if v is not None) >= n:
 			messagebox.showerror("Error", "Capacidad alcanzada (n)")
 			return
+		# duplicate check
+		for idx in self._probe_indices(k, n, d):
+			if self._table[idx] is None:
+				break
+			if self._table[idx] == k:
+				messagebox.showerror("Duplicado", f"La clave {str(k).zfill(d)} ya existe en la tabla.")
+				return
 		i = self._hash(k, n, d)
 		placed = False
 		for idx in self._probe_indices(k, n, d):
@@ -213,7 +221,7 @@ class HashView(ttk.Frame):
 			self._draw()
 			self.update_idletasks()
 			self.after(300)
-			if self._table[idx] is None or self._table[idx] == k:
+			if self._table[idx] is None:
 				self._table[idx] = k
 				placed = True
 				break
@@ -358,12 +366,12 @@ class HashView(ttk.Frame):
 		if len(arr) != n:
 			messagebox.showerror("Error", "Tamaño de tabla no coincide con n")
 			return
-		# validate digits
+		# validate digits (exact length)
 		for v in arr:
 			if v is None:
 				continue
-			if not isinstance(v, int) or len(str(v)) > d:
-				messagebox.showerror("Error", "Clave supera los dígitos permitidos")
+			if not isinstance(v, int) or len(str(v)) != d:
+				messagebox.showerror("Error", f"Clave debe tener exactamente {d} dígitos")
 				return
 		self._table = arr
 		self._highlight = None

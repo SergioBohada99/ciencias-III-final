@@ -38,6 +38,8 @@ class RetroApp:
 		from app.views.residuos_tree_view import ResiduosTreeView
 		from app.views.bloques_binaria_view import BloquesBinariaView
 		from app.views.transformacion_view import TransformacionClavesView
+		from app.views.grafo_unario_view import GrafoUnarioView
+		from app.views.grafo_binario_view import GrafoBinarioView
 
 
 		available_views: Dict[str, Type[tk.Frame]] = {
@@ -52,6 +54,8 @@ class RetroApp:
 			"huffman": HuffmanView,
 			"residuos_multiples": ResiduosMultiplesView,
 			"grafos": GrafosView,
+			"grafo_unario": GrafoUnarioView,
+			"grafo_binario": GrafoBinarioView,
 			"bloques": BloquesView,
 			"binario_ext": BloquesBinariaView,
 			"transformacion": TransformacionClavesView,
