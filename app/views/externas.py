@@ -29,5 +29,15 @@ class ExternasView(ttk.Frame):
 		)
 		btn_transform.grid(row=0, column=2, padx=10, pady=10)
 
+		btn_lineal = ttk.Button(
+			panel, text="Dinamicas totales", style="Retro.TButton", command=lambda: app.navigate("dinamicas_totales")
+		)
+		btn_lineal.grid(row=0, column=0, padx=10, pady=10)
+
+		btn_lineal = ttk.Button(
+			panel, text="Dinamicas parciales", style="Retro.TButton", command=lambda: app.navigate("dinamicas_parciales")
+		)
+		btn_lineal.grid(row=1, column=1, padx=10, pady=10)
+
 		back = ttk.Button(self, text="← Volver", command=lambda: app.navigate("busquedas"))
 		back.pack(pady=10)

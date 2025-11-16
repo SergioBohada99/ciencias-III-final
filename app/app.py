@@ -38,6 +38,8 @@ class RetroApp:
 		from app.views.residuos_tree_view import ResiduosTreeView
 		from app.views.bloques_binaria_view import BloquesBinariaView
 		from app.views.transformacion_view import TransformacionClavesView
+		from app.views.dinamicas_parciales_view import DinamicasParcialesView
+		from app.views.dinamicas_totales_view import DinamicasTotalesView
 		from app.views.grafo_unario_view import GrafoUnarioView
 		from app.views.grafo_binario_view import GrafoBinarioView
 
@@ -62,6 +64,8 @@ class RetroApp:
 			"dinamicas": DinamicasView,
 			"indices": IndicesView,
 			"residuos_tree": ResiduosTreeView,
+			"dinamicas_totales": DinamicasTotalesView,
+			"dinamicas_parciales": DinamicasParcialesView
 		}
 
 		self.views.clear()
