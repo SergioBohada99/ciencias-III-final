@@ -5,6 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 from typing import List, Optional
+from tkinter import messagebox
 
 
 class HashTableTotales:
@@ -65,6 +66,11 @@ class HashTableTotales:
     # ------------------------------------------------------------
     # Operaciones básicas
     # ------------------------------------------------------------
+    def _existe_clave(self, clave: int) -> bool:
+        """Retorna True si la clave ya está en la tabla (cubeta u overflow)."""
+        # Como insertion_order mantiene TODAS las claves existentes
+        return clave in self.insertion_order
+    
     def insertar(self, clave: int) -> str:
         """
         Inserta una clave en la tabla.
@@ -74,6 +80,12 @@ class HashTableTotales:
         - Si la cubeta está llena, se inserta en la lista de overflow de esa cubeta.
         - Después de insertar, si densidad >= objetivo, realiza expansión total.
         """
+        if self._existe_clave(clave):
+            messagebox.showwarning(
+                "Clave duplicada",
+                f"La clave {clave} ya se encuentra almacenada en la cubeta."
+            )
+            return f"La clave {clave} ya se encuentra almacenada. No se permiten duplicados."
         msg = self._insertar_en_cubeta_o_overflow(clave)
 
         # Verificar densidad para posible expansión total

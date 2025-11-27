@@ -93,6 +93,7 @@ class ResiduosMultiplesView(ttk.Frame):
 		self._anim_index: int = 0
 		self._anim_running: bool = False
 		self._anim_delete: bool = False
+		self._highlight_node: Optional[ResiduoNode] = None
 		# Build full skeleton for current m (default 2) and 5 bits
 		self._build_skeleton()
 		self._draw()
@@ -211,12 +212,20 @@ class ResiduosMultiplesView(ttk.Frame):
 			end_node.value = ch.upper()
 			self._insert_order.append(ch.upper())
 			self.status.configure(text=f"Insertado {ch.upper()} - chunks: {self._chunk_bits(bits, m)}")
+			messagebox.showinfo("Inserción", "Clave insertada correctamente.")
 		else:
 			self.status.configure(text=f"Posición ocupada por {end_node.value}")
 
-		# Preparar animación con aristas exactas (no es delete)
+		# Preparar animación con aristas exactas (no es delete),
+		# pero NO ejecutar animación todavía
 		self._prepare_animation_from_edges(edges, delete=False)
+
+		# Redibujar árbol normalmente (sin resaltar aún)
 		self._draw()
+
+		# Limpiar la entrada
+		self.entry_key.delete(0, tk.END)
+
 
 
 	def _on_search(self) -> None:
@@ -227,22 +236,39 @@ class ResiduosMultiplesView(ttk.Frame):
 		if bits is None:
 			return
 
+		# Limpiar highlight anterior
+		self._highlight_node = None
+
 		edges, nodes_path = self._build_path_edges_from_bits(bits, m)
 		if not edges:
 			self.status.configure(text="No encontrado")
 			messagebox.showinfo("Búsqueda", "Valor no encontrado")
 			self._prepare_animation_from_edges([], delete=False)
+			self._draw()
 			return
 
 		end_node = nodes_path[-1]
 		if end_node.is_end and (end_node.value or "").upper() == ch.upper():
 			self.status.configure(text=f"Encontrado en profundidad {len(edges)}")
 			messagebox.showinfo("Búsqueda", f"Clave '{ch.upper()}' encontrada ✅")
+
+			# 🔹 Resaltar SOLO el nodo encontrado
+			self._highlight_node = end_node
+
+			# Dejar animación preparada (ruta) pero no ejecutarla
 			self._prepare_animation_from_edges(edges, delete=False)
 		else:
 			self.status.configure(text="No encontrado")
 			messagebox.showinfo("Búsqueda", f"Clave '{ch.upper()}' no encontrada ❌")
 			self._prepare_animation_from_edges(edges, delete=False)
+
+		# Redibujar el árbol con el nodo (si lo hay) resaltado
+		self._draw()
+
+		# Limpiar entry
+		self.entry_key.delete(0, tk.END)
+
+
 
 
 	def _on_delete(self) -> None:
@@ -400,8 +426,8 @@ class ResiduosMultiplesView(ttk.Frame):
 		self._anim_index = 0
 		self._anim_delete = delete
 		self._anim_running = False
-		self._draw()
-		self.status.configure(text=f"Animación lista: {len(self._anim_steps)} pasos")
+		# self._draw()
+		# self.status.configure(text=f"Animación lista: {len(self._anim_steps)} pasos")
 
 	def _anim_step(self) -> None:
 		if self._anim_index >= len(self._anim_steps):
@@ -477,7 +503,7 @@ class ResiduosMultiplesView(ttk.Frame):
 		# espacio horizontal disponible
 		avail_w = max(1, width - 2 * margin_x)
 		# px por unidad, respetando separación mínima entre nodos
-		unit_px = max(min_sep_px, avail_w / max(1, total_units))
+		unit_px = max(node_radius * 2.2, avail_w / max(1, total_units))
 		# recalcular separación vertical para que quepa en altura
 		levels = max_depth + 1
 		avail_h = max(1, height - 2 * margin_y)
@@ -537,27 +563,32 @@ class ResiduosMultiplesView(ttk.Frame):
 									fill="#000000", font=("MS Sans Serif", 9, "bold"))
 
 			# --- Dibujo de nodos ---
-			for node, (x, y, depth) in positions.items():
-				fill = "#bdbdbd"
-				outline = "#808080"
+		for node, (x, y, depth) in positions.items():
+			fill = "#bdbdbd"
+			outline = "#808080"
 
-				# Si estamos animando una arista, resalta solo el nodo destino (child)
-				if edge_hint is not None and node is edge_hint[1]:
-					fill = "#ff6666" if delete else "#4da3ff"
-					outline = "#255eaa"
+			# Si estamos animando una arista, resalta el nodo destino de esa arista
+			if edge_hint is not None and node is edge_hint[1]:
+				fill = "#ff6666" if delete else "#4da3ff"
+				outline = "#255eaa"
 
-				self.canvas.create_oval(
-					x - node_radius, y - node_radius,
-					x + node_radius, y + node_radius,
-					fill=fill, outline=outline, width=2
+			# 🔹 Resaltado de búsqueda: PRIORIDAD sobre lo demás
+			if self._highlight_node is node:
+				fill = "#4de36a"      # verde o el color que quieras para "encontrado"
+				outline = "#2f7a3b"
+
+			self.canvas.create_oval(
+				x - node_radius, y - node_radius,
+				x + node_radius, y + node_radius,
+				fill=fill, outline=outline, width=2
+			)
+
+			if node.is_end:
+				text = node.value if node.value else "*"
+				self.canvas.create_text(
+					x, y, text=text, fill="#000000",
+					font=("MS Sans Serif", 10, "bold")
 				)
-
-				if node.is_end:
-					text = node.value if node.value else "*"
-					self.canvas.create_text(
-						x, y, text=text, fill="#000000",
-						font=("MS Sans Serif", 10, "bold")
-					)
 
 
 	def _build_path_edges_from_bits(self, bits: str, m: int) -> Tuple[List[Tuple[ResiduoNode, ResiduoNode, str, int]], List[ResiduoNode]]:

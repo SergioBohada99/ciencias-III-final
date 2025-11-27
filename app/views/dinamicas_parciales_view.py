@@ -5,6 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 from typing import List, Optional
+from tkinter import messagebox
 
 
 class HashTableParciales:
@@ -54,30 +55,36 @@ class HashTableParciales:
     # ------------------------------------------------------------
     # Operaciones
     # ------------------------------------------------------------
+    
+    def _existe_clave(self, clave: int) -> bool:
+        """Retorna True si la clave ya está en la tabla (cubeta u overflow)."""
+        # Como insertion_order mantiene TODAS las claves existentes
+        messagebox.showwarning(
+            "Clave duplicada",
+            f"La clave {clave} ya se encuentra almacenada en la cubeta."
+        )
+        return clave in self.insertion_order
+
     def insertar(self, clave: int) -> str:
-        if self.total_registros >= self.capacidad_total:
-            return "Tabla llena, no es posible insertar más registros."
+        #  verificar duplicados
+        if self._existe_clave(clave):
+            return f"La clave {clave} ya se encuentra almacenada. No se permiten duplicados."
 
-        msg_log = []
+        ok, msg = self._insertar_en_cubeta_o_expandir_parcial(clave)
 
-        inserted, msg = self._insertar_en_cubeta_o_expandir_parcial(clave)
-        msg_log.append(msg)
-
-        if not inserted:
-            return " | ".join(msg_log)
+        if not ok:
+            return msg  # caso extremo
 
         if self.densidad_actual >= self.densidad_objetivo:
-            msg_log.append(
-                f"Densidad actual {self.densidad_actual:.2f} ≥ objetivo {self.densidad_objetivo:.2f}, "
-                f"se realiza expansión PARCIAL (añadir una cubeta)."
+            msg += (
+                f" | Densidad actual {self.densidad_actual:.2f} ≥ objetivo "
+                f"{self.densidad_objetivo:.2f}, se realiza expansión PARCIAL."
             )
             self._expansion_parcial()
         else:
-            msg_log.append(
-                f"Densidad actual {self.densidad_actual:.2f}, no se requiere expansión."
-            )
+            msg += f" | Densidad actual {self.densidad_actual:.2f}, no se requiere expansión."
 
-        return " | ".join(msg_log)
+        return msg
     
     def _remove_from_insertion_order(self, clave: int) -> None:
         try:
@@ -184,8 +191,8 @@ class HashTableParciales:
         - Dos expansiones parciales equivalen a una expansión total.
 
         Si N es el número de cubetas al inicio del ciclo:
-          1ª parcial: num_cubetas = N + N//2
-          2ª parcial: num_cubetas = 2 * N
+        1ª parcial: num_cubetas = N + N//2
+        2ª parcial: num_cubetas = 2 * N
 
         En cada expansión parcial se rehashean TODOS los registros
         usando el nuevo número de cubetas. Por eso, después de la

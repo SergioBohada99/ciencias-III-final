@@ -18,6 +18,7 @@ class ResidNode:
 		self.bits: Optional[str] = None  # bits MSB->LSB (por ejemplo "10010")
 		self.left: Optional['ResidNode'] = None
 		self.right: Optional['ResidNode'] = None
+		
 
 
 class ResiduosTreeView(ttk.Frame):
@@ -64,7 +65,12 @@ class ResiduosTreeView(ttk.Frame):
 		btn_undo = ttk.Button(ops, text="↶ Deshacer (Ctrl+Z)", command=self._on_undo)
 		btn_undo.grid(row=11, column=0, pady=2, sticky="ew")
 
-		self.status = ttk.Label(ops, text="Estado: listo")
+		self.status = ttk.Label(
+			ops,
+			text="Estado: listo",
+			wraplength=180,   # ancho máximo en píxeles
+			justify="left"
+		)
 		self.status.grid(row=12, column=0, pady=(10, 0), sticky="w")
 
 		viz = ttk.Frame(panel, style="Panel.TFrame", padding=8)
@@ -572,13 +578,22 @@ class ResiduosTreeView(ttk.Frame):
 		# Construir los pasos de animación, pero NO ejecutar todavía
 		result_node = self._search_symbol(ch, animate=True)
 		self._prepare_animation()
-		# Mostrar mensaje según resultado
+
+		# 👉 Resaltar solo el nodo encontrado (si existe)
 		if result_node is not None:
+			self._highlight_nodes = [result_node]
 			messagebox.showinfo("Búsqueda", f"Clave '{ch}' encontrada ✅")
-			self.status.configure(text=f"Clave '{ch}' encontrada. Animación lista (usa ▶ Reproducir o Paso).")
+			self.status.configure(
+				text=f"Clave '{ch}' encontrada. Animación lista (usa ▶ Reproducir o Paso)."
+			)
 		else:
+			# No encontrado: ningún nodo debe estar en verde
+			self._highlight_nodes = []
 			messagebox.showinfo("Búsqueda", f"Clave '{ch}' no encontrada ❌")
-			self.status.configure(text=f"Clave '{ch}' no encontrada. Animación lista (usa ▶ Reproducir o Paso).")
+			self.status.configure(
+				text=f"Clave '{ch}' no encontrada. Animación lista (usa ▶ Reproducir o Paso)."
+			)
+
 		self.entry.delete(0, tk.END)
 		self._draw()
 
@@ -803,11 +818,26 @@ class ResiduosTreeView(ttk.Frame):
 				outline = "#ff6666"
 				text = "COL"
 			else:
-				fill = "#ccffcc"
-				outline = "#66aa66"
+				# NODO HOJA (LEAF)
+				# 👉 Por defecto: color neutro (no verde)
+				# 👉 Si está resaltado (búsqueda), se pinta de verde
+				if node in self._highlight_nodes:
+					fill = "#ccffcc"   # verde solo para el nodo encontrado
+					outline = "#66aa66"
+				else:
+					fill = "#f5f5f5"   # gris muy claro para hojas normales
+					outline = "#999999"
 				text = f"{node.symbol}\n{node.value}"
-			self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=fill, outline=outline, width=2)
-			self.canvas.create_text(x, y, text=text, fill="#000000", font=("MS Sans Serif", 9, "bold"))
+
+			self.canvas.create_oval(
+				x - r, y - r, x + r, y + r,
+				fill=fill, outline=outline, width=2
+			)
+			self.canvas.create_text(
+				x, y, text=text,
+				fill="#000000", font=("MS Sans Serif", 9, "bold")
+			)
+
 
 	def _split_node(self,
 					node: ResidNode,
