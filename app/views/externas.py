@@ -32,17 +32,17 @@ class ExternasView(ttk.Frame):
 		btn_dinamicas_totales = ttk.Button(
 			panel, text="Dinamicas totales", style="Retro.TButton", command=lambda: app.navigate("dinamicas_totales")
 		)
-		btn_dinamicas_totales.grid(row=0, column=0, padx=10, pady=10)
+		btn_dinamicas_totales.grid(row=1, column=1, padx=10, pady=10)
 
 		btn_dinamicas_parciales = ttk.Button(
 			panel, text="Dinamicas parciales", style="Retro.TButton", command=lambda: app.navigate("dinamicas_parciales")
 		)
-		btn_dinamicas_parciales.grid(row=1, column=0, padx=10, pady=10)
+		btn_dinamicas_parciales.grid(row=1, column=2, padx=10, pady=10)
 
 		btn_indices = ttk.Button(
 			panel, text="Indices", style="Retro.TButton", command=lambda: app.navigate("indices")
 		)
-		btn_indices.grid(row=1, column=2, padx=10, pady=10)
+		btn_indices.grid(row=0, column=3, padx=10, pady=10)
 
 		back = ttk.Button(self, text="← Volver", command=lambda: app.navigate("busquedas"))
 		back.pack(pady=10)
