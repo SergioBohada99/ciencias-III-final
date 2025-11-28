@@ -349,11 +349,15 @@ class GrafoBinarioView(ttk.Frame):
 		
 		# Agregar aristas de G1 con prefijo
 		for arista_id, datos in self.aristas_g1.items():
-			self.aristas_resultado[f"G1_{arista_id}"] = datos.copy()
+			nueva_arista = datos.copy()
+			nueva_arista['regla'] = 0
+			self.aristas_resultado[f"G1_{arista_id}"] = nueva_arista
 		
 		# Agregar aristas de G2 con prefijo
 		for arista_id, datos in self.aristas_g2.items():
-			self.aristas_resultado[f"G2_{arista_id}"] = datos.copy()
+			nueva_arista = datos.copy()
+			nueva_arista['regla'] = 0
+			self.aristas_resultado[f"G2_{arista_id}"] = nueva_arista
 		
 		self.operacion_actual = "Unión (G₁ ∪ G₂)"
 		self.status.configure(text=self.operacion_actual)
@@ -386,7 +390,9 @@ class GrafoBinarioView(ttk.Frame):
 		for arista_id, datos in self.aristas_g1.items():
 			par = tuple(sorted([datos['u'], datos['v']]))
 			if par in aristas_comunes:
-				self.aristas_resultado[arista_id] = datos.copy()
+				nueva_arista = datos.copy()
+				nueva_arista['regla'] = 0
+				self.aristas_resultado[arista_id] = nueva_arista
 		
 		self.operacion_actual = "Intersección (G₁ ∩ G₂)"
 		self.status.configure(text=self.operacion_actual)
@@ -411,7 +417,9 @@ class GrafoBinarioView(ttk.Frame):
 		for arista_id, datos in self.aristas_g1.items():
 			par = tuple(sorted([datos['u'], datos['v']]))
 			if par not in aristas_g2_set:
-				self.aristas_resultado[f"G1_{arista_id}"] = datos.copy()
+				nueva_arista = datos.copy()
+				nueva_arista['regla'] = 0
+				self.aristas_resultado[f"G1_{arista_id}"] = nueva_arista
 		
 		# Aristas de G2 que no están en G1
 		aristas_g1_set = set()
@@ -422,7 +430,9 @@ class GrafoBinarioView(ttk.Frame):
 		for arista_id, datos in self.aristas_g2.items():
 			par = tuple(sorted([datos['u'], datos['v']]))
 			if par not in aristas_g1_set:
-				self.aristas_resultado[f"G2_{arista_id}"] = datos.copy()
+				nueva_arista = datos.copy()
+				nueva_arista['regla'] = 0
+				self.aristas_resultado[f"G2_{arista_id}"] = nueva_arista
 		
 		self.operacion_actual = "Suma Anillo (G₁ ⊕ G₂)"
 		self.status.configure(text=self.operacion_actual)
@@ -445,27 +455,27 @@ class GrafoBinarioView(ttk.Frame):
 		arista_counter = 0
 		
 		# Aristas: (u1, u2) - (v1, v2) existe si:
-		# 1. u1 = v1 y (u2, v2) es arista en G2, O
-		# 2. u2 = v2 y (u1, v1) es arista en G1
+		# Regla 1: u1 = v1 y u2Rv2 (arista en G2)
+		# Regla 2: u2 = v2 y u1Rv1 (arista en G1)
 		
-		# Caso 1: u1 = v1, (u2, v2) en G2
+		# Regla 1: u1 = v1, u2Rv2
 		for u1 in self.vertices_g1:
 			for arista_id, datos in self.aristas_g2.items():
 				u2, v2 = datos['u'], datos['v']
-				v1 = f"({u1},{u2})"
-				v2_new = f"({u1},{v2})"
-				if v1 in self.vertices_resultado and v2_new in self.vertices_resultado:
-					self.aristas_resultado[f"c{arista_counter}"] = {'u': v1, 'v': v2_new}
+				vert1 = f"({u1},{u2})"
+				vert2 = f"({u1},{v2})"
+				if vert1 in self.vertices_resultado and vert2 in self.vertices_resultado:
+					self.aristas_resultado[f"c{arista_counter}"] = {'u': vert1, 'v': vert2, 'regla': 1}
 					arista_counter += 1
 		
-		# Caso 2: u2 = v2, (u1, v1) en G1
+		# Regla 2: u2 = v2, u1Rv1
 		for u2 in self.vertices_g2:
 			for arista_id, datos in self.aristas_g1.items():
 				u1, v1 = datos['u'], datos['v']
-				v1_new = f"({u1},{u2})"
-				v2_new = f"({v1},{u2})"
-				if v1_new in self.vertices_resultado and v2_new in self.vertices_resultado:
-					self.aristas_resultado[f"c{arista_counter}"] = {'u': v1_new, 'v': v2_new}
+				vert1 = f"({u1},{u2})"
+				vert2 = f"({v1},{u2})"
+				if vert1 in self.vertices_resultado and vert2 in self.vertices_resultado:
+					self.aristas_resultado[f"c{arista_counter}"] = {'u': vert1, 'v': vert2, 'regla': 2}
 					arista_counter += 1
 		
 		self.operacion_actual = "Producto Cartesiano (G₁ × G₂)"
@@ -489,17 +499,35 @@ class GrafoBinarioView(ttk.Frame):
 		arista_counter = 0
 		
 		# Aristas: (u1, u2) - (v1, v2) existe si:
-		# (u1, v1) es arista en G1 Y (u2, v2) es arista en G2
+		# u1Rv1 (arista en G1) Y u2Rv2 (arista en G2)
+		# Para grafos no dirigidos, cada par de aristas genera DOS aristas en el producto:
+		# 1. (u1,u2)-(v1,v2)
+		# 2. (u1,v2)-(v1,u2) (versión cruzada)
+		aristas_agregadas = set()
+		
 		for arista_g1_id, datos_g1 in self.aristas_g1.items():
 			u1, v1 = datos_g1['u'], datos_g1['v']
 			for arista_g2_id, datos_g2 in self.aristas_g2.items():
 				u2, v2 = datos_g2['u'], datos_g2['v']
 				
-				v1_new = f"({u1},{u2})"
-				v2_new = f"({v1},{v2})"
-				if v1_new in self.vertices_resultado and v2_new in self.vertices_resultado:
-					self.aristas_resultado[f"t{arista_counter}"] = {'u': v1_new, 'v': v2_new}
+				# Arista 1: (u1,u2)-(v1,v2)
+				vert1 = f"({u1},{u2})"
+				vert2 = f"({v1},{v2})"
+				par = tuple(sorted([vert1, vert2]))
+				if vert1 in self.vertices_resultado and vert2 in self.vertices_resultado and par not in aristas_agregadas:
+					self.aristas_resultado[f"t{arista_counter}"] = {'u': vert1, 'v': vert2, 'regla': 0}
+					aristas_agregadas.add(par)
 					arista_counter += 1
+				
+				# Arista 2 (cruzada): (u1,v2)-(v1,u2) - solo si no es un loop
+				if u1 != v1 and u2 != v2:
+					vert1_cruz = f"({u1},{v2})"
+					vert2_cruz = f"({v1},{u2})"
+					par_cruz = tuple(sorted([vert1_cruz, vert2_cruz]))
+					if vert1_cruz in self.vertices_resultado and vert2_cruz in self.vertices_resultado and par_cruz not in aristas_agregadas:
+						self.aristas_resultado[f"t{arista_counter}"] = {'u': vert1_cruz, 'v': vert2_cruz, 'regla': 0}
+						aristas_agregadas.add(par_cruz)
+						arista_counter += 1
 		
 		self.operacion_actual = "Producto Tensorial (G₁ ⊗ G₂)"
 		self.status.configure(text=self.operacion_actual)
@@ -522,28 +550,28 @@ class GrafoBinarioView(ttk.Frame):
 		arista_counter = 0
 		
 		# Aristas: (u1, u2) - (v1, v2) existe si:
-		# 1. (u1, v1) es arista en G1, O
-		# 2. u1 = v1 y (u2, v2) es arista en G2
+		# Regla 1: u1Rv1 (arista en G1)
+		# Regla 2: u1 = v1 y u2Rv2 (arista en G2)
 		
-		# Caso 1: (u1, v1) en G1
+		# Regla 1: u1Rv1 (para todas las combinaciones de u2, v2)
 		for arista_id, datos in self.aristas_g1.items():
 			u1, v1 = datos['u'], datos['v']
 			for u2 in self.vertices_g2:
 				for v2 in self.vertices_g2:
-					v1_new = f"({u1},{u2})"
-					v2_new = f"({v1},{v2})"
-					if v1_new in self.vertices_resultado and v2_new in self.vertices_resultado:
-						self.aristas_resultado[f"comp{arista_counter}"] = {'u': v1_new, 'v': v2_new}
+					vert1 = f"({u1},{u2})"
+					vert2 = f"({v1},{v2})"
+					if vert1 in self.vertices_resultado and vert2 in self.vertices_resultado:
+						self.aristas_resultado[f"comp{arista_counter}"] = {'u': vert1, 'v': vert2, 'regla': 1}
 						arista_counter += 1
 		
-		# Caso 2: u1 = v1 y (u2, v2) en G2
+		# Regla 2: u1 = v1 y u2Rv2
 		for u1 in self.vertices_g1:
 			for arista_id, datos in self.aristas_g2.items():
 				u2, v2 = datos['u'], datos['v']
-				v1_new = f"({u1},{u2})"
-				v2_new = f"({u1},{v2})"
-				if v1_new in self.vertices_resultado and v2_new in self.vertices_resultado:
-					self.aristas_resultado[f"comp{arista_counter}"] = {'u': v1_new, 'v': v2_new}
+				vert1 = f"({u1},{u2})"
+				vert2 = f"({u1},{v2})"
+				if vert1 in self.vertices_resultado and vert2 in self.vertices_resultado:
+					self.aristas_resultado[f"comp{arista_counter}"] = {'u': vert1, 'v': vert2, 'regla': 2}
 					arista_counter += 1
 		
 		self.operacion_actual = "Composición (G₁[G₂])"
@@ -579,6 +607,8 @@ class GrafoBinarioView(ttk.Frame):
 			total_aristas = len(aristas_grupo)
 			for idx, (arista_id, datos) in enumerate(aristas_grupo):
 				u, v = datos['u'], datos['v']
+				regla = datos.get('regla', 0)  # 0 = sin regla, 1 = regla 1 (negro), 2 = regla 2 (rojo)
+				
 				# Verificar que ambos vértices estén en el resultado y tengan posición
 				if u not in self.vertices_resultado or v not in self.vertices_resultado:
 					continue
@@ -589,12 +619,13 @@ class GrafoBinarioView(ttk.Frame):
 				x2, y2 = self.posiciones_resultado[v]
 				
 				if u == v:
-					self._draw_loop_resultado(x1, y1, arista_id, idx, total_aristas)
+					self._draw_loop_resultado(x1, y1, arista_id, idx, total_aristas, regla)
 				elif total_aristas > 1:
-					curvatura = (idx - (total_aristas - 1) / 2) * 25
-					self._draw_curved_line_resultado(x1, y1, x2, y2, arista_id, curvatura)
+					# Mayor curvatura para que las aristas paralelas no se superpongan
+					curvatura = (idx - (total_aristas - 1) / 2) * 40
+					self._draw_curved_line_resultado(x1, y1, x2, y2, arista_id, curvatura, regla)
 				else:
-					self._draw_straight_line_resultado(x1, y1, x2, y2, arista_id)
+					self._draw_straight_line_resultado(x1, y1, x2, y2, arista_id, regla)
 		
 		# Dibujar vértices (solo los que están en vertices_resultado)
 		radius = 15
@@ -613,6 +644,9 @@ class GrafoBinarioView(ttk.Frame):
 				text=str(vertice), fill="#ffffff",
 				font=("MS Sans Serif", font_size, "bold")
 			)
+		
+		# Dibujar leyenda si la operación tiene múltiples reglas (OR)
+		self._draw_leyenda()
 	
 	def _calcular_posiciones_resultado(self) -> None:
 		"""Calcula posiciones para el grafo resultado usando force-directed"""
@@ -713,15 +747,54 @@ class GrafoBinarioView(ttk.Frame):
 					nueva_y = max(margin, min(height - margin, nueva_y))
 					self.posiciones_resultado[vertice] = (nueva_x, nueva_y)
 	
-	def _draw_straight_line_resultado(self, x1: float, y1: float, x2: float, y2: float, arista_id: str) -> None:
+	def _get_color_for_regla(self, regla: int) -> str:
+		"""Retorna el color según la regla aplicada"""
+		if regla == 2:
+			return "#cc0000"  # Rojo para regla 2
+		else:
+			return "#000000"  # Negro para regla 1 o sin regla
+	
+	def _draw_leyenda(self) -> None:
+		"""Dibuja la leyenda de colores para operaciones con múltiples reglas"""
+		if not self.operacion_actual:
+			return
+		
+		# Solo mostrar leyenda para operaciones con reglas OR
+		if "Cartesiano" in self.operacion_actual:
+			leyenda = [
+				("Negro: u₁=v₁ ∧ u₂Rv₂", "#000000"),
+				("Rojo: u₂=v₂ ∧ u₁Rv₁", "#cc0000")
+			]
+		elif "Composición" in self.operacion_actual:
+			leyenda = [
+				("Negro: u₁Rv₁", "#000000"),
+				("Rojo: u₁=v₁ ∧ u₂Rv₂", "#cc0000")
+			]
+		else:
+			return  # No mostrar leyenda para otras operaciones
+		
+		# Posición de la leyenda (esquina inferior izquierda)
+		y_start = 280
+		x_start = 5
+		
+		for idx, (texto, color) in enumerate(leyenda):
+			y = y_start - (len(leyenda) - 1 - idx) * 14
+			# Línea de ejemplo
+			self.canvas_resultado.create_line(x_start, y, x_start + 20, y, fill=color, width=2)
+			# Texto
+			self.canvas_resultado.create_text(x_start + 25, y, text=texto, anchor="w", fill=color, font=("MS Sans Serif", 8))
+	
+	def _draw_straight_line_resultado(self, x1: float, y1: float, x2: float, y2: float, arista_id: str, regla: int = 0) -> None:
 		"""Dibuja línea recta en resultado"""
-		self.canvas_resultado.create_line(x1, y1, x2, y2, fill="#000000", width=2)
+		color = self._get_color_for_regla(regla)
+		self.canvas_resultado.create_line(x1, y1, x2, y2, fill=color, width=2)
 		mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
 		self.canvas_resultado.create_rectangle(mid_x - 12, mid_y - 10, mid_x + 12, mid_y + 10, fill="#ffffff", outline="")
-		self.canvas_resultado.create_text(mid_x, mid_y, text=arista_id, fill="#000000", font=("MS Sans Serif", 9, "bold"))
+		self.canvas_resultado.create_text(mid_x, mid_y, text=arista_id, fill=color, font=("MS Sans Serif", 9, "bold"))
 	
-	def _draw_curved_line_resultado(self, x1: float, y1: float, x2: float, y2: float, arista_id: str, curvatura: float) -> None:
+	def _draw_curved_line_resultado(self, x1: float, y1: float, x2: float, y2: float, arista_id: str, curvatura: float, regla: int = 0) -> None:
 		"""Dibuja línea curva en resultado"""
+		color = self._get_color_for_regla(regla)
 		mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
 		dx = x2 - x1
 		dy = y2 - y1
@@ -732,12 +805,13 @@ class GrafoBinarioView(ttk.Frame):
 		perp_y = dx / length
 		control_x = mid_x + perp_x * curvatura
 		control_y = mid_y + perp_y * curvatura
-		self.canvas_resultado.create_line(x1, y1, control_x, control_y, x2, y2, fill="#000000", width=2, smooth=True)
+		self.canvas_resultado.create_line(x1, y1, control_x, control_y, x2, y2, fill=color, width=2, smooth=True)
 		self.canvas_resultado.create_rectangle(control_x - 12, control_y - 10, control_x + 12, control_y + 10, fill="#ffffff", outline="")
-		self.canvas_resultado.create_text(control_x, control_y, text=arista_id, fill="#000000", font=("MS Sans Serif", 9, "bold"))
+		self.canvas_resultado.create_text(control_x, control_y, text=arista_id, fill=color, font=("MS Sans Serif", 9, "bold"))
 	
-	def _draw_loop_resultado(self, x: float, y: float, arista_id: str, idx: int, total: int) -> None:
+	def _draw_loop_resultado(self, x: float, y: float, arista_id: str, idx: int, total: int, regla: int = 0) -> None:
 		"""Dibuja bucle en resultado"""
+		color = self._get_color_for_regla(regla)
 		radius = 15
 		loop_radius = 20
 		if total > 1:
@@ -748,9 +822,9 @@ class GrafoBinarioView(ttk.Frame):
 		distance = radius + loop_radius
 		loop_x = x + distance * math.cos(angle_rad)
 		loop_y = y + distance * math.sin(angle_rad)
-		self.canvas_resultado.create_oval(loop_x - loop_radius, loop_y - loop_radius, loop_x + loop_radius, loop_y + loop_radius, outline="#000000", width=2, fill="")
+		self.canvas_resultado.create_oval(loop_x - loop_radius, loop_y - loop_radius, loop_x + loop_radius, loop_y + loop_radius, outline=color, width=2, fill="")
 		label_distance = loop_radius + 12
 		label_x = loop_x + label_distance * math.cos(angle_rad)
 		label_y = loop_y + label_distance * math.sin(angle_rad)
 		self.canvas_resultado.create_rectangle(label_x - 12, label_y - 10, label_x + 12, label_y + 10, fill="#ffffff", outline="")
-		self.canvas_resultado.create_text(label_x, label_y, text=arista_id, fill="#000000", font=("MS Sans Serif", 9, "bold"))
+		self.canvas_resultado.create_text(label_x, label_y, text=arista_id, fill=color, font=("MS Sans Serif", 9, "bold"))

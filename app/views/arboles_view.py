@@ -318,9 +318,11 @@ class ArbolesView(ttk.Frame):
 		# Redibujar con colores del MST
 		self._draw()
 		
-		# Mostrar solo las tablas de circuitos (ramas y cuerdas se muestran gráficamente)
+		# Mostrar tablas con los resultados analíticos
 		self._mostrar_circuitos_fundamentales()
 		self._mostrar_circuitos()
+		self._mostrar_conjuntos_corte()
+		self._mostrar_cortes_fundamentales()
 		
 		# Actualizar scroll region
 		self.resultados_canvas.update_idletasks()
@@ -517,6 +519,48 @@ class ArbolesView(ttk.Frame):
 		
 		self._crear_tabla_resultado("Circuitos", headers, datos)
 	
+	def _mostrar_conjuntos_corte(self) -> None:
+		"""Muestra todos los conjuntos de corte del grafo"""
+		cortes = self._encontrar_conjuntos_corte()
+		
+		if not cortes:
+			self._crear_tabla_resultado("Conjuntos de Corte", ["Corte", "Aristas"], [])
+			return
+		
+		headers = ["Corte"] + sorted(list(self.aristas.keys()))
+		datos = []
+		
+		for idx, corte in enumerate(cortes):
+			fila = [f"K{idx+1}"]
+			for arista_id in sorted(self.aristas.keys()):
+				fila.append("1" if arista_id in corte else "0")
+			datos.append(fila)
+		
+		self._crear_tabla_resultado("Conjuntos de Corte", headers, datos)
+	
+	def _mostrar_cortes_fundamentales(self) -> None:
+		"""Muestra los conjuntos de corte fundamentales basados en el MST"""
+		if not self.mst_aristas:
+			self._crear_tabla_resultado("Conjuntos de Corte Fundamentales", ["Corte", "Aristas"], [])
+			return
+		
+		cortes_fund = self._encontrar_cortes_fundamentales()
+		
+		if not cortes_fund:
+			self._crear_tabla_resultado("Conjuntos de Corte Fundamentales", ["Corte", "Aristas"], [])
+			return
+		
+		headers = ["Corte Fund."] + sorted(list(self.aristas.keys()))
+		datos = []
+		
+		for idx, corte in enumerate(cortes_fund):
+			fila = [f"KF{idx+1}"]
+			for arista_id in sorted(self.aristas.keys()):
+				fila.append("1" if arista_id in corte else "0")
+			datos.append(fila)
+		
+		self._crear_tabla_resultado("Conjuntos de Corte Fundamentales", headers, datos)
+	
 	def _encontrar_camino_mst(self, grafo_mst: Dict[str, List[str]], inicio: str, fin: str) -> List[str]:
 		"""Encuentra un camino en el MST usando BFS"""
 		if inicio == fin:
@@ -589,4 +633,82 @@ class ArbolesView(ttk.Frame):
 				visitados_global.add(vertice_inicial)
 		
 		return circuitos
+	
+	def _encontrar_conjuntos_corte(self) -> List[Set[str]]:
+		"""Encuentra todos los conjuntos de corte (edge cuts) del grafo"""
+		if len(self.vertices) < 2 or not self.aristas:
+			return []
+		
+		vertices_list = sorted(list(self.vertices))
+		n = len(vertices_list)
+		cortes: List[Set[str]] = []
+		visitados: Set[frozenset[str]] = set()
+		
+		for mask in range(1, 1 << n):
+			if not (mask & 1):
+				continue  # asegurar particiones únicas (incluye al primer vértice)
+			if mask == (1 << n) - 1:
+				continue  # evitar conjunto completo
+			
+			S = {vertices_list[i] for i in range(n) if (mask >> i) & 1}
+			corte = set()
+			for arista_id, datos in self.aristas.items():
+				u, v = datos['u'], datos['v']
+				if (u in S and v not in S) or (v in S and u not in S):
+					corte.add(arista_id)
+			
+			if corte:
+				corte_frozen = frozenset(corte)
+				if corte_frozen not in visitados:
+					visitados.add(corte_frozen)
+					cortes.append(corte)
+		
+		return cortes
+	
+	def _encontrar_cortes_fundamentales(self) -> List[Set[str]]:
+		"""Encuentra los conjuntos de corte fundamentales basados en el MST"""
+		if not self.mst_aristas:
+			return []
+		
+		cortes_fundamentales: List[Set[str]] = []
+		for arista_id in sorted(self.mst_aristas):
+			datos = self.aristas[arista_id]
+			u, v = datos['u'], datos['v']
+			componente_u = self._componente_mst_sin_arista(arista_id, u)
+			
+			corte = {arista_id}
+			for otra_id, datos_arista in self.aristas.items():
+				if otra_id == arista_id:
+					continue
+				a, b = datos_arista['u'], datos_arista['v']
+				if (a in componente_u and b not in componente_u) or (b in componente_u and a not in componente_u):
+					corte.add(otra_id)
+			
+			cortes_fundamentales.append(corte)
+		
+		return cortes_fundamentales
+	
+	def _componente_mst_sin_arista(self, arista_excluida: str, vertice_inicial: str) -> Set[str]:
+		"""Encuentra el componente del MST sin una arista específica"""
+		grafo = {v: [] for v in self.vertices}
+		for arista_id in self.mst_aristas:
+			if arista_id == arista_excluida:
+				continue
+			datos = self.aristas[arista_id]
+			u, v = datos['u'], datos['v']
+			grafo[u].append(v)
+			grafo[v].append(u)
+		
+		componente = set()
+		cola = [vertice_inicial]
+		while cola:
+			actual = cola.pop(0)
+			if actual in componente:
+				continue
+			componente.add(actual)
+			for vecino in grafo.get(actual, []):
+				if vecino not in componente:
+					cola.append(vecino)
+		
+		return componente
 

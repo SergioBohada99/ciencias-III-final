@@ -24,35 +24,48 @@ class GrafoMatricesView(ttk.Frame):
 		lbl_add = ttk.Label(left_panel, text="Grafo Dirigido", font=("MS Sans Serif", 10, "bold"))
 		lbl_add.grid(row=0, column=0, columnspan=2, pady=(0, 5), sticky="w")
 		
-		ttk.Label(left_panel, text="Vértice:").grid(row=1, column=0, sticky="w", pady=2)
+		ttk.Label(left_panel, text="Tipo de grafo:").grid(row=1, column=0, sticky="w", pady=2)
+		self.tipo_grafo = tk.StringVar(value="Dirigido")
+		tipo_combo = ttk.Combobox(
+			left_panel,
+			textvariable=self.tipo_grafo,
+			values=("Dirigido", "No dirigido"),
+			state="readonly",
+			width=12
+		)
+		tipo_combo.grid(row=1, column=1, sticky="ew", pady=2)
+		tipo_combo.bind("<<ComboboxSelected>>", self._on_cambiar_tipo)
+		
+		ttk.Label(left_panel, text="Vértice:").grid(row=2, column=0, sticky="w", pady=2)
 		self.entry_vertice = ttk.Entry(left_panel, width=12)
-		self.entry_vertice.grid(row=1, column=1, pady=2)
+		self.entry_vertice.grid(row=2, column=1, pady=2)
 		
 		btn_add_vertice = ttk.Button(left_panel, text="Agregar vértice", command=self._on_agregar_vertice, style="Retro.TButton")
-		btn_add_vertice.grid(row=2, column=0, columnspan=2, pady=2, sticky="ew")
+		btn_add_vertice.grid(row=3, column=0, columnspan=2, pady=2, sticky="ew")
 		
-		ttk.Label(left_panel, text="Arista (u→v):").grid(row=3, column=0, sticky="w", pady=2)
+		ttk.Label(left_panel, text="Arista (u→v):").grid(row=4, column=0, sticky="w", pady=2)
 		frame_arista = ttk.Frame(left_panel)
-		frame_arista.grid(row=3, column=1, pady=2)
+		frame_arista.grid(row=4, column=1, pady=2)
 		self.entry_u = ttk.Entry(frame_arista, width=5)
 		self.entry_u.pack(side=tk.LEFT)
-		ttk.Label(frame_arista, text="→").pack(side=tk.LEFT, padx=2)
+		self.arrow_label = ttk.Label(frame_arista, text="→")
+		self.arrow_label.pack(side=tk.LEFT, padx=2)
 		self.entry_v = ttk.Entry(frame_arista, width=5)
 		self.entry_v.pack(side=tk.LEFT)
 		
 		btn_add_arista = ttk.Button(left_panel, text="Agregar arista", command=self._on_agregar_arista, style="Retro.TButton")
-		btn_add_arista.grid(row=4, column=0, columnspan=2, pady=2, sticky="ew")
+		btn_add_arista.grid(row=5, column=0, columnspan=2, pady=2, sticky="ew")
 		
 		btn_limpiar = ttk.Button(left_panel, text="Limpiar grafo", command=self._on_limpiar)
-		btn_limpiar.grid(row=5, column=0, columnspan=2, pady=(5, 2), sticky="ew")
+		btn_limpiar.grid(row=6, column=0, columnspan=2, pady=(5, 2), sticky="ew")
 		
 		# Canvas para visualizar el grafo
 		self.canvas = tk.Canvas(left_panel, background="#ffffff", width=300, height=250)
-		self.canvas.grid(row=6, column=0, columnspan=2, pady=(10, 0))
+		self.canvas.grid(row=7, column=0, columnspan=2, pady=(10, 0))
 		
 		# Botón calcular matrices
 		btn_calcular = ttk.Button(left_panel, text="Calcular Matrices", command=self._on_calcular_matrices, style="Retro.TButton")
-		btn_calcular.grid(row=7, column=0, columnspan=2, pady=(10, 0), sticky="ew")
+		btn_calcular.grid(row=8, column=0, columnspan=2, pady=(10, 0), sticky="ew")
 		
 		# Panel derecho: matrices
 		right_panel = ttk.Frame(main_panel, style="Panel.TFrame", padding=10)
@@ -99,6 +112,7 @@ class GrafoMatricesView(ttk.Frame):
 		self.aristas: Dict[str, Tuple[str, str]] = {}  # {arista_id: (u, v)}
 		self.posiciones: Dict[str, Tuple[float, float]] = {}
 		self.arista_counter = 0
+		self.es_dirigido = True
 	
 	def _on_agregar_vertice(self) -> None:
 		"""Agrega un vértice al grafo"""
@@ -152,6 +166,12 @@ class GrafoMatricesView(ttk.Frame):
 		self.matrices_grid_col = 0
 		self._draw()
 	
+	def _on_cambiar_tipo(self, *_args) -> None:
+		"""Actualiza la configuración cuando cambia el tipo de grafo"""
+		self.es_dirigido = self.tipo_grafo.get() == "Dirigido"
+		self.arrow_label.configure(text="→" if self.es_dirigido else "—")
+		self._draw()
+	
 	def _calcular_posiciones(self) -> None:
 		"""Calcula posiciones para el grafo"""
 		n = len(self.vertices)
@@ -181,26 +201,38 @@ class GrafoMatricesView(ttk.Frame):
 		
 		self._calcular_posiciones()
 		
-		# Agrupar aristas por par de vértices (sin dirección) para detectar bidireccionales
-		aristas_por_par_no_dir = {}
-		aristas_por_par_dir = {}
+		# Agrupar aristas por par de vértices (sin dirección) y detectar lazos
+		aristas_por_par_no_dir: Dict[Tuple[str, str], List[Tuple[str, str, str]]] = {}
+		loops_por_vertice: Dict[str, List[str]] = {}
 		
 		for arista_id, (u, v) in self.aristas.items():
-			# Par sin dirección (para detectar bidireccionales)
-			par_no_dir = tuple(sorted([u, v]))
-			if par_no_dir not in aristas_por_par_no_dir:
-				aristas_por_par_no_dir[par_no_dir] = []
-			aristas_por_par_no_dir[par_no_dir].append((arista_id, u, v))
+			if u == v:
+				loops_por_vertice.setdefault(u, []).append(arista_id)
+				continue
 			
-			# Par con dirección (para paralelas en misma dirección)
-			par_dir = (u, v)
-			if par_dir not in aristas_por_par_dir:
-				aristas_por_par_dir[par_dir] = []
-			aristas_por_par_dir[par_dir].append(arista_id)
+			par_no_dir = tuple(sorted([u, v]))
+			aristas_por_par_no_dir.setdefault(par_no_dir, []).append((arista_id, u, v))
 		
-		# Dibujar aristas (flechas)
-		aristas_dibujadas = set()
+		if self.es_dirigido:
+			self._draw_dirs(aristas_por_par_no_dir)
+		else:
+			self._draw_undir(aristas_por_par_no_dir)
 		
+		# Dibujar lazos (loops) al final para que queden encima
+		for vertice, aristas_loop in loops_por_vertice.items():
+			if vertice not in self.posiciones:
+				continue
+			x, y = self.posiciones[vertice]
+			self._draw_loops(x, y, len(aristas_loop), self.es_dirigido)
+		
+		# Dibujar vértices
+		radius = 15
+		for vertice, (x, y) in self.posiciones.items():
+			self.canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill="#4da3ff", outline="#255eaa", width=2)
+			self.canvas.create_text(x, y, text=str(vertice), fill="#ffffff", font=("MS Sans Serif", 10, "bold"))
+	
+	def _draw_dirs(self, aristas_por_par_no_dir: Dict[Tuple[str, str], List[Tuple[str, str, str]]]) -> None:
+		"""Dibuja las aristas para el caso dirigido"""
 		for par_no_dir, aristas_grupo in aristas_por_par_no_dir.items():
 			u, v = par_no_dir
 			if u not in self.posiciones or v not in self.posiciones:
@@ -209,73 +241,84 @@ class GrafoMatricesView(ttk.Frame):
 			x1, y1 = self.posiciones[u]
 			x2, y2 = self.posiciones[v]
 			
-			# Separar aristas por dirección
-			aristas_u_v = [(aid, u_orig, v_orig) for aid, u_orig, v_orig in aristas_grupo if u_orig == u and v_orig == v]
-			aristas_v_u = [(aid, u_orig, v_orig) for aid, u_orig, v_orig in aristas_grupo if u_orig == v and v_orig == u]
+			aristas_u_v = [aid for aid, u_orig, v_orig in aristas_grupo if u_orig == u and v_orig == v]
+			aristas_v_u = [aid for aid, u_orig, v_orig in aristas_grupo if u_orig == v and v_orig == u]
 			
 			total_aristas = len(aristas_u_v) + len(aristas_v_u)
+			distancia = max(math.sqrt((x2 - x1)**2 + (y2 - y1)**2), 1)
+			curvatura_base = max(50, distancia * 0.3)
+			incremento = max(25, distancia * 0.2)
 			
-			# SIEMPRE curvar si hay más de una arista entre estos vértices (en cualquier dirección)
-			if total_aristas > 1:
-				# Hay múltiples aristas, curvar todas con mayor separación
-				# Calcular distancia entre vértices
-				distancia = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-				
-				# Curvatura base y incremento ajustados según distancia
-				# Para distancias cortas, usar valores más pequeños pero aún visibles
-				# Para distancias largas, usar valores más grandes
-				if distancia < 80:
-					curvatura_base = 40
-					incremento = 35
-				elif distancia < 150:
-					curvatura_base = 60
-					incremento = 50
-				else:
-					curvatura_base = 80
-					incremento = 70
-				
-				# Dibujar aristas u->v (curvatura positiva)
-				total_u_v = len(aristas_u_v)
-				for idx, (arista_id, _, _) in enumerate(aristas_u_v):
-					# Distribuir uniformemente alrededor del centro
-					if total_u_v == 1:
-						# Si solo hay una en esta dirección pero hay otra en dirección opuesta
-						curvatura = curvatura_base
-					else:
-						# Distribuir: para 2 aristas: -incremento/2, +incremento/2
-						# Para 3: -incremento, 0, +incremento
-						offset = (idx - (total_u_v - 1) / 2) * incremento
-						curvatura = curvatura_base + offset
-					self._draw_curved_arrow(x1, y1, x2, y2, curvatura)
-					aristas_dibujadas.add(arista_id)
-				
-				# Dibujar aristas v->u (curvatura negativa, lado opuesto)
-				total_v_u = len(aristas_v_u)
-				for idx, (arista_id, _, _) in enumerate(aristas_v_u):
-					# Distribuir en el lado opuesto con la misma lógica
-					if total_v_u == 1:
-						curvatura = -curvatura_base
-					else:
-						offset = (idx - (total_v_u - 1) / 2) * incremento
-						curvatura = -(curvatura_base + offset)
-					self._draw_curved_arrow(x2, y2, x1, y1, curvatura)
-					aristas_dibujadas.add(arista_id)
-			else:
-				# Solo una arista, dibujar recta
-				if aristas_u_v:
-					arista_id, _, _ = aristas_u_v[0]
+			def _curvaturas(total: int, lado: int) -> List[float]:
+				if total == 0:
+					return []
+				if total == 1 and total_aristas == 1:
+					return [0]
+				if total == 1:
+					return [lado * curvatura_base]
+				offsets = []
+				for idx in range(total):
+					offset = (idx - (total - 1) / 2) * incremento
+					offsets.append(lado * (curvatura_base + offset))
+				return offsets
+			
+			curvas_u_v = _curvaturas(len(aristas_u_v), 1)
+			curvas_v_u = _curvaturas(len(aristas_v_u), -1)
+			
+			for curvatura in curvas_u_v:
+				if curvatura == 0:
 					self._draw_arrow(x1, y1, x2, y2)
-					aristas_dibujadas.add(arista_id)
-				elif aristas_v_u:
-					arista_id, _, _ = aristas_v_u[0]
+				else:
+					self._draw_curved_arrow(x1, y1, x2, y2, curvatura)
+			
+			for curvatura in curvas_v_u:
+				if curvatura == 0:
 					self._draw_arrow(x2, y2, x1, y1)
-					aristas_dibujadas.add(arista_id)
+				else:
+					self._draw_curved_arrow(x2, y2, x1, y1, curvatura)
+	
+	def _draw_undir(self, aristas_por_par_no_dir: Dict[Tuple[str, str], List[Tuple[str, str, str]]]) -> None:
+		"""Dibuja las aristas para el caso no dirigido"""
+		for par_no_dir, aristas_grupo in aristas_por_par_no_dir.items():
+			u, v = par_no_dir
+			if u not in self.posiciones or v not in self.posiciones:
+				continue
+			
+			x1, y1 = self.posiciones[u]
+			x2, y2 = self.posiciones[v]
+			
+			total = len(aristas_grupo)
+			distancia = max(math.sqrt((x2 - x1)**2 + (y2 - y1)**2), 1)
+			curvatura_base = max(35, distancia * 0.25)
+			incremento = max(20, distancia * 0.15)
+			curvaturas = self._curvaturas_simetricas(total, curvatura_base, incremento)
+			
+			for (arista_id, _u, _v), curvatura in zip(aristas_grupo, curvaturas):
+				if curvatura == 0:
+					self._draw_undirected_line(x1, y1, x2, y2)
+				else:
+					self._draw_curved_undirected_line(x1, y1, x2, y2, curvatura)
+	
+	def _curvaturas_simetricas(self, total: int, base: float, incremento: float) -> List[float]:
+		"""Genera curvaturas simétricas alrededor de cero para aristas no dirigidas"""
+		if total <= 0:
+			return []
+		if total == 1:
+			return [0]
 		
-		# Dibujar vértices
-		radius = 15
-		for vertice, (x, y) in self.posiciones.items():
-			self.canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill="#4da3ff", outline="#255eaa", width=2)
-			self.canvas.create_text(x, y, text=str(vertice), fill="#ffffff", font=("MS Sans Serif", 10, "bold"))
+		curvaturas: List[float] = []
+		if total % 2 == 1:
+			curvaturas.append(0)
+		
+		paso = 0
+		while len(curvaturas) < total:
+			curv = base + paso * incremento
+			curvaturas.insert(0, -curv)
+			if len(curvaturas) < total:
+				curvaturas.append(curv)
+			paso += 1
+		
+		return curvaturas
 	
 	def _draw_arrow(self, x1: float, y1: float, x2: float, y2: float) -> None:
 		"""Dibuja una flecha dirigida recta"""
@@ -358,6 +401,115 @@ class GrafoMatricesView(ttk.Frame):
 		# Dibujar la curva con smooth=True para una curva suave y visible
 		self.canvas.create_line(*points, fill="#000000", width=2, smooth=True, 
 							   arrow=tk.LAST, arrowshape=(10, 12, 3), splinesteps=100)
+	
+	def _draw_undirected_line(self, x1: float, y1: float, x2: float, y2: float) -> None:
+		"""Dibuja una arista no dirigida recta"""
+		radius = 15
+		dx = x2 - x1
+		dy = y2 - y1
+		length = math.sqrt(dx**2 + dy**2)
+		if length == 0:
+			return
+		
+		start_x = x1 + (dx / length) * radius
+		start_y = y1 + (dy / length) * radius
+		end_x = x2 - (dx / length) * radius
+		end_y = y2 - (dy / length) * radius
+		
+		self.canvas.create_line(start_x, start_y, end_x, end_y, fill="#000000", width=2)
+	
+	def _draw_curved_undirected_line(self, x1: float, y1: float, x2: float, y2: float, curvatura: float) -> None:
+		"""Dibuja una arista no dirigida curva"""
+		radius = 15
+		dx = x2 - x1
+		dy = y2 - y1
+		length = math.sqrt(dx**2 + dy**2)
+		if length == 0:
+			return
+		
+		mid_x = (x1 + x2) / 2
+		mid_y = (y1 + y2) / 2
+		perp_x = -dy / length
+		perp_y = dx / length
+		control_x = mid_x + perp_x * curvatura
+		control_y = mid_y + perp_y * curvatura
+		
+		dx_start = control_x - x1
+		dy_start = control_y - y1
+		len_start = math.sqrt(dx_start**2 + dy_start**2)
+		if len_start > 0:
+			start_x = x1 + (dx_start / len_start) * radius
+			start_y = y1 + (dy_start / len_start) * radius
+		else:
+			start_x = x1
+			start_y = y1
+		
+		dx_end = x2 - control_x
+		dy_end = y2 - control_y
+		len_end = math.sqrt(dx_end**2 + dy_end**2)
+		if len_end > 0:
+			end_x = x2 - (dx_end / len_end) * radius
+			end_y = y2 - (dy_end / len_end) * radius
+		else:
+			end_x = x2
+			end_y = y2
+		
+		num_points = 15
+		points = []
+		for i in range(num_points + 1):
+			t = i / num_points
+			px = (1-t)**2 * start_x + 2*(1-t)*t * control_x + t**2 * end_x
+			py = (1-t)**2 * start_y + 2*(1-t)*t * control_y + t**2 * end_y
+			points.extend([px, py])
+		
+		self.canvas.create_line(*points, fill="#000000", width=2, smooth=True, splinesteps=100)
+	
+	def _draw_loops(self, x: float, y: float, total: int, dirigido: bool) -> None:
+		"""Dibuja uno o varios lazos en un vértice sin superposición"""
+		if total <= 0:
+			return
+		
+		base_radius = 28
+		separacion = 16
+		altura = 35  # cuánto se desplaza el lazo sobre el vértice
+		
+		for idx in range(total):
+			offset = (idx - (total - 1) / 2) * separacion
+			radius = base_radius + abs(offset)
+			
+			bbox = (
+				x - radius - offset,
+				y - radius - altura - abs(offset),
+				x + radius - offset,
+				y + radius - altura - abs(offset)
+			)
+			
+			self.canvas.create_arc(
+				bbox,
+				start=210,
+				extent=300,
+				style=tk.ARC,
+				width=2,
+				outline="#000000"
+			)
+			
+			if dirigido:
+				# Pequeña flecha para indicar la dirección del lazo
+				angle = math.radians(-30)
+				arrow_x1 = x + (radius - 5) * math.cos(angle) - offset
+				arrow_y1 = y - altura + (radius - 5) * math.sin(angle) - abs(offset)
+				arrow_x2 = arrow_x1 + 12 * math.cos(angle)
+				arrow_y2 = arrow_y1 + 12 * math.sin(angle)
+				self.canvas.create_line(
+					arrow_x1,
+					arrow_y1,
+					arrow_x2,
+					arrow_y2,
+					fill="#000000",
+					width=2,
+					arrow=tk.LAST,
+					arrowshape=(10, 12, 3)
+				)
 	
 	def _crear_tabla_matriz(self, titulo: str, headers: List[str], datos: List[List[str]]) -> None:
 		"""Crea una tabla bonita para mostrar una matriz"""
@@ -502,12 +654,20 @@ class GrafoMatricesView(ttk.Frame):
 			fila = [v]
 			for a in aristas_list:
 				u, w = self.aristas[a]
-				if v == u:
-					fila.append("+1")
-				elif v == w:
-					fila.append("-1")
+				if self.es_dirigido:
+					if v == u:
+						fila.append("+1")
+					elif v == w:
+						fila.append("-1")
+					else:
+						fila.append("0")
 				else:
-					fila.append("0")
+					if u == w == v:
+						fila.append("2")
+					elif v == u or v == w:
+						fila.append("1")
+					else:
+						fila.append("0")
 			datos.append(fila)
 		
 		self._crear_tabla_matriz("Matriz de Incidencia", headers, datos)
@@ -527,9 +687,15 @@ class GrafoMatricesView(ttk.Frame):
 				adj_matrix[u][v] = 0
 		
 		# Llenar matriz
-		for arista_id, (u, v) in self.aristas.items():
-			if u in adj_matrix and v in adj_matrix[u]:
-				adj_matrix[u][v] = 1
+		for _, (u, v) in self.aristas.items():
+			if self.es_dirigido:
+				if u in adj_matrix and v in adj_matrix[u]:
+					adj_matrix[u][v] += 1
+			else:
+				if u in adj_matrix and v in adj_matrix[u]:
+					adj_matrix[u][v] += 1
+				if u != v and v in adj_matrix and u in adj_matrix[v]:
+					adj_matrix[v][u] += 1
 		
 		# Preparar datos
 		datos = []
@@ -559,13 +725,25 @@ class GrafoMatricesView(ttk.Frame):
 			for a2 in aristas_list:
 				adj_matrix[a1][a2] = 0
 		
-		# Llenar matriz: a1 -> a2 si el vértice final de a1 es el inicial de a2
-		for a1 in aristas_list:
-			_, v1_final = self.aristas[a1]
-			for a2 in aristas_list:
-				if a1 != a2:
-					u2_inicial, _ = self.aristas[a2]
-					if v1_final == u2_inicial:
+		if self.es_dirigido:
+			# Llenar matriz: a1 -> a2 si el vértice final de a1 es el inicial de a2
+			for a1 in aristas_list:
+				_, v1_final = self.aristas[a1]
+				for a2 in aristas_list:
+					if a1 != a2:
+						u2_inicial, _ = self.aristas[a2]
+						if v1_final == u2_inicial:
+							adj_matrix[a1][a2] = 1
+		else:
+			# En grafos no dirigidos, las aristas son adyacentes si comparten al menos un vértice
+			for a1 in aristas_list:
+				u1, v1 = self.aristas[a1]
+				conjunto1 = {u1, v1}
+				for a2 in aristas_list:
+					if a1 == a2:
+						continue
+					u2, v2 = self.aristas[a2]
+					if conjunto1.intersection({u2, v2}):
 						adj_matrix[a1][a2] = 1
 		
 		# Preparar datos
@@ -675,34 +853,60 @@ class GrafoMatricesView(ttk.Frame):
 	# ========== ALGORITMOS PARA ENCONTRAR CIRCUITOS Y CORTES ==========
 	
 	def _encontrar_circuitos(self) -> List[List[str]]:
-		"""Encuentra todos los circuitos (ciclos) en el grafo dirigido"""
+		"""Encuentra todos los circuitos (ciclos) en el grafo"""
+		if self.es_dirigido:
+			return self._encontrar_circuitos_dirigidos()
+		return self._encontrar_circuitos_no_dirigidos()
+	
+	def _encontrar_circuitos_dirigidos(self) -> List[List[str]]:
 		circuitos = []
-		circuitos_set = set()  # Para evitar duplicados
-		
-		# Construir lista de adyacencia
+		circuitos_set = set()
 		adyacencia = {v: [] for v in self.vertices}
 		for arista_id, (u, v) in self.aristas.items():
 			adyacencia[u].append((v, arista_id))
 		
-		def dfs_circuito(vertice_actual: str, camino_aristas: List[str], vertices_camino: List[str]) -> None:
-			# Buscar aristas salientes
+		def dfs(vertice_actual: str, camino_aristas: List[str], vertices_camino: List[str]) -> None:
 			for vecino, arista_id in adyacencia.get(vertice_actual, []):
 				if vecino in vertices_camino:
-					# Encontramos un ciclo
 					idx_inicio = vertices_camino.index(vecino)
 					ciclo_aristas = camino_aristas[idx_inicio:] + [arista_id]
-					# Normalizar: ordenar y convertir a tupla para comparar
 					ciclo_tupla = tuple(sorted(ciclo_aristas))
 					if ciclo_tupla not in circuitos_set:
 						circuitos_set.add(ciclo_tupla)
 						circuitos.append(ciclo_aristas)
 				else:
-					# Continuar DFS
-					dfs_circuito(vecino, camino_aristas + [arista_id], vertices_camino + [vecino])
+					dfs(vecino, camino_aristas + [arista_id], vertices_camino + [vecino])
 		
-		# Intentar desde cada vértice
 		for vertice_inicial in self.vertices:
-			dfs_circuito(vertice_inicial, [], [vertice_inicial])
+			dfs(vertice_inicial, [], [vertice_inicial])
+		
+		return circuitos
+	
+	def _encontrar_circuitos_no_dirigidos(self) -> List[List[str]]:
+		circuitos = []
+		circuitos_set = set()
+		adyacencia = {v: [] for v in self.vertices}
+		for arista_id, (u, v) in self.aristas.items():
+			adyacencia[u].append((v, arista_id))
+			if u != v:
+				adyacencia[v].append((u, arista_id))
+		
+		def dfs(vertice_actual: str, camino_aristas: List[str], vertices_camino: List[str]) -> None:
+			for vecino, arista_id in adyacencia.get(vertice_actual, []):
+				if arista_id in camino_aristas:
+					continue
+				if vecino in vertices_camino:
+					idx_inicio = vertices_camino.index(vecino)
+					ciclo_aristas = camino_aristas[idx_inicio:] + [arista_id]
+					ciclo_tupla = tuple(sorted(ciclo_aristas))
+					if ciclo_tupla not in circuitos_set:
+						circuitos_set.add(ciclo_tupla)
+						circuitos.append(ciclo_aristas)
+				else:
+					dfs(vecino, camino_aristas + [arista_id], vertices_camino + [vecino])
+		
+		for vertice_inicial in self.vertices:
+			dfs(vertice_inicial, [], [vertice_inicial])
 		
 		return circuitos
 	
@@ -725,8 +929,10 @@ class GrafoMatricesView(ttk.Frame):
 		# Para cada arista del coárbol, encontrar el circuito fundamental
 		for arista_coarbol in aristas_coarbol:
 			u, v = self.aristas[arista_coarbol]
-			# Encontrar camino en el árbol de v a u (si existe)
-			camino = self._encontrar_camino_en_arbol(arbol, v, u)
+			if self.es_dirigido:
+				camino = self._encontrar_camino_en_arbol(arbol, v, u)
+			else:
+				camino = self._encontrar_camino_en_arbol(arbol, u, v)
 			if camino:
 				# El circuito fundamental es: camino de v a u + arista del coárbol (u -> v)
 				circuito = camino + [arista_coarbol]
@@ -745,21 +951,25 @@ class GrafoMatricesView(ttk.Frame):
 		if not self.vertices:
 			return []
 		
-		arbol = []
-		visitados = set()
+		arbol: List[str] = []
+		visitados: Set[str] = set()
+		aristas_usadas: Set[str] = set()
+		
+		adyacencia = {v: [] for v in self.vertices}
+		for arista_id, (u, v) in self.aristas.items():
+			adyacencia[u].append((v, arista_id))
+			if not self.es_dirigido and u != v:
+				adyacencia[v].append((u, arista_id))
 		
 		def dfs_arbol(vertice: str) -> None:
 			visitados.add(vertice)
-			for arista_id, (u, v) in self.aristas.items():
-				if u == vertice and v not in visitados:
-					arbol.append(arista_id)
-					dfs_arbol(v)
+			for vecino, arista_id in adyacencia.get(vertice, []):
+				if vecino not in visitados:
+					if arista_id not in aristas_usadas:
+						aristas_usadas.add(arista_id)
+						arbol.append(arista_id)
+					dfs_arbol(vecino)
 		
-		# Empezar desde el primer vértice
-		vertice_inicial = list(self.vertices)[0]
-		dfs_arbol(vertice_inicial)
-		
-		# Si hay vértices no conectados, intentar conectarlos
 		for vertice in self.vertices:
 			if vertice not in visitados:
 				dfs_arbol(vertice)
@@ -767,31 +977,50 @@ class GrafoMatricesView(ttk.Frame):
 		return arbol
 	
 	def _encontrar_camino_en_arbol(self, arbol: List[str], inicio: str, fin: str) -> List[str]:
-		"""Encuentra un camino en el árbol dirigido de inicio a fin"""
-		# Construir grafo del árbol (dirigido)
-		grafo_arbol = {}
-		for arista_id in arbol:
-			u, v = self.aristas[arista_id]
-			if u not in grafo_arbol:
-				grafo_arbol[u] = []
-			grafo_arbol[u].append((v, arista_id))
-		
-		# DFS para encontrar camino
-		def dfs_camino(vertice_actual: str, camino_actual: List[str], visitados: Set[str]) -> Optional[List[str]]:
-			if vertice_actual == fin:
-				return camino_actual
+		"""Encuentra un camino en el árbol (respetando el tipo de grafo) de inicio a fin"""
+		if self.es_dirigido:
+			grafo_arbol: Dict[str, List[Tuple[str, str]]] = {}
+			for arista_id in arbol:
+				u, v = self.aristas[arista_id]
+				grafo_arbol.setdefault(u, []).append((v, arista_id))
 			
-			if vertice_actual in grafo_arbol:
-				for vecino, arista_id in grafo_arbol[vertice_actual]:
+			def dfs_dir(vertice_actual: str, camino_actual: List[str], visitados: Set[str]) -> Optional[List[str]]:
+				if vertice_actual == fin:
+					return camino_actual
+				for vecino, arista_id in grafo_arbol.get(vertice_actual, []):
 					if vecino not in visitados:
 						visitados.add(vecino)
-						resultado = dfs_camino(vecino, camino_actual + [arista_id], visitados)
+						resultado = dfs_dir(vecino, camino_actual + [arista_id], visitados)
 						if resultado:
 							return resultado
 						visitados.remove(vecino)
+				return None
+			
+			resultado = dfs_dir(inicio, [], {inicio})
+			return resultado if resultado else []
+		
+		# Caso no dirigido: se permite recorrer aristas en ambos sentidos pero sin repetirlas
+		grafo_arbol: Dict[str, List[Tuple[str, str]]] = {}
+		for arista_id in arbol:
+			u, v = self.aristas[arista_id]
+			grafo_arbol.setdefault(u, []).append((v, arista_id))
+			if u != v:
+				grafo_arbol.setdefault(v, []).append((u, arista_id))
+		
+		def dfs_undir(vertice_actual: str, camino_actual: List[str], usadas: Set[str]) -> Optional[List[str]]:
+			if vertice_actual == fin:
+				return camino_actual
+			for vecino, arista_id in grafo_arbol.get(vertice_actual, []):
+				if arista_id in usadas:
+					continue
+				usadas.add(arista_id)
+				resultado = dfs_undir(vecino, camino_actual + [arista_id], usadas)
+				if resultado:
+					return resultado
+				usadas.remove(arista_id)
 			return None
 		
-		resultado = dfs_camino(inicio, [], {inicio})
+		resultado = dfs_undir(inicio, [], set())
 		return resultado if resultado else []
 	
 	def _estan_conectados_en_arbol(self, arbol: List[str], u: str, v: str) -> bool:
@@ -863,27 +1092,25 @@ class GrafoMatricesView(ttk.Frame):
 		return cortes_fund
 	
 	def _encontrar_componente_sin_arista(self, arbol: List[str], arista_excluida: str, vertice_inicial: str) -> Set[str]:
-		"""Encuentra el componente conexo dirigido sin una arista específica"""
-		componente = set()
-		visitados = set()
+		"""Encuentra el componente conexo sin una arista específica"""
+		componente: Set[str] = set()
+		visitados: Set[str] = set()
 		
-		# Construir grafo del árbol sin la arista excluida
-		grafo_arbol = {}
+		grafo_arbol: Dict[str, List[str]] = {}
 		for arista_id in arbol:
 			if arista_id == arista_excluida:
 				continue
 			u, v = self.aristas[arista_id]
-			if u not in grafo_arbol:
-				grafo_arbol[u] = []
-			grafo_arbol[u].append(v)
+			grafo_arbol.setdefault(u, []).append(v)
+			if not self.es_dirigido and u != v:
+				grafo_arbol.setdefault(v, []).append(u)
 		
 		def dfs_componente(vertice: str) -> None:
 			visitados.add(vertice)
 			componente.add(vertice)
-			if vertice in grafo_arbol:
-				for vecino in grafo_arbol[vertice]:
-					if vecino not in visitados:
-						dfs_componente(vecino)
+			for vecino in grafo_arbol.get(vertice, []):
+				if vecino not in visitados:
+					dfs_componente(vecino)
 		
 		dfs_componente(vertice_inicial)
 		return componente
