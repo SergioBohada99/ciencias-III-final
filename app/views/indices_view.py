@@ -42,15 +42,34 @@ class IndicesView(ttk.Frame):
         self.entry_R = ttk.Entry(ops, width=10)
         self.entry_R.grid(row=row, column=1, sticky="w", pady=2)
 
-        # Tipo de índice: primario / secundario
+        # Selección de tipo de índice mediante ComboBox
         row += 1
         ttk.Label(ops, text="Tipo de índice:").grid(row=row, column=0, sticky="w", pady=(8, 2))
+
         self.index_type = tk.StringVar(value="primary")
-        rb_primary = ttk.Radiobutton(ops, text="Primario (no denso)", value="primary", variable=self.index_type)
-        rb_secondary = ttk.Radiobutton(ops, text="Secundario (denso)", value="secondary", variable=self.index_type)
-        rb_primary.grid(row=row, column=1, sticky="w", pady=(8, 0))
-        row += 1
-        rb_secondary.grid(row=row, column=1, sticky="w", pady=2)
+        self.cmb_index_type = ttk.Combobox(
+            ops,
+            textvariable=self.index_type,
+            state="readonly",
+            values=[
+                "Primario",
+                "Secundario",
+            ],
+        )
+        self.cmb_index_type.grid(row=row, column=1, sticky="w", pady=(8, 2))
+
+        # Mapear valores visuales a valores internos usados por tu lógica
+        def _update_index_type(event):
+            selected = self.cmb_index_type.get()
+            if selected == "Primario":
+                self.index_type.set("primary")
+            else:
+                self.index_type.set("secondary")
+
+        self.cmb_index_type.bind("<<ComboboxSelected>>", _update_index_type)
+
+        # Establecer valor inicial visible
+        self.cmb_index_type.current(0)
 
         # Check: índice multinivel
         row += 1
@@ -143,6 +162,9 @@ class IndicesView(ttk.Frame):
 
         back = ttk.Button(self, text="← Volver", command=lambda: app.navigate("externas"))
         back.pack(pady=6)
+
+        btn_clear = ttk.Button(file_panel, text="Limpiar pantalla", command=self._on_clear)
+        btn_clear.grid(row=0, column=3, padx=4, pady=2)
 
         self.app = app
 
@@ -262,12 +284,15 @@ class IndicesView(ttk.Frame):
         self._draw_visualization()
 
     # -------------------------------------------------------------------------
-    # Visualización en Canvas (índice izquierda, bloques derecha)
+    # Visualización en Canvas:
+    #   - Índice nivel 1: estructura única con Bloque 1 / Bloque i / Bloque final
+    #   - Datos:          estructura única con Bloque 1 / Bloque j / Bloque final
+    #   - Multinivel:     cada nivel (>=2) como estructura única con Bloque 1 / i / final
     # -------------------------------------------------------------------------
     def _draw_visualization(self) -> None:
         self.canvas.delete("all")
 
-        if not self._last_calc:
+        if not hasattr(self, "_last_calc") or not self._last_calc:
             self.canvas.create_text(
                 10, 10,
                 anchor="nw",
@@ -280,9 +305,11 @@ class IndicesView(ttk.Frame):
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
         if w <= 1 or h <= 1:
-            w, h = 600, 460
+            w, h = 900, 460
 
+        # ------------------------------------------------------------------
         # Recuperar cálculos
+        # ------------------------------------------------------------------
         r = self._last_calc["r"]
         bfr = self._last_calc["bfr"]
         b = self._last_calc["b"]
@@ -293,36 +320,74 @@ class IndicesView(ttk.Frame):
         multilevel_blocks = self._last_calc.get("multilevel_blocks", [])
         is_multilevel = self._last_calc.get("is_multilevel", False)
 
+        # ------------------------------------------------------------------
         # Layout general
-        margin_y = 60
-        block_w = 140
-        block_h = 80
-        v_spacing = 18
+        # ------------------------------------------------------------------
+        margin_y = 70
+        header_h = 20
+        row_h = 14
+        max_rows_per_block = 4
 
-        # Columnas:
-        #   - Niveles multinivel (≥2) a la izquierda
-        #   - Índice primario/secundario (nivel 1) en el centro-izquierda
-        #   - Bloques de datos a la derecha
-        idx_center_x = w * 0.40
-        data_center_x = w * 0.78
+        section_h = max_rows_per_block * row_h
+        content_h = 3 * section_h
+        struct_h = header_h + content_h + 10
 
-        # ---------------------------------------------------------------------
-        # 1) Generación de datos de ejemplo (respetando capacidades reales)
-        # ---------------------------------------------------------------------
+        idx_center_x = w * 0.45
+        data_center_x = w * 0.80
+
+        # Para flechas índice → datos
+        idx_block_centers: dict[str, float] = {}
+        data_block_centers: dict[str, float] = {}
+        idx_struct_right: float | None = None
+        data_struct_left: float | None = None
+
+        # ------------------------------------------------------------------
+        # Helpers
+        # ------------------------------------------------------------------
+        def pick_three_indices(total_blocks: int):
+            """Devuelve índices representativos: [bloque1, intermedio, final]."""
+            if total_blocks <= 0:
+                return []
+            if total_blocks == 1:
+                return [0]
+            if total_blocks == 2:
+                return [0, 1]
+            first = 0
+            mid = total_blocks // 2
+            last = total_blocks - 1
+            return [first, mid, last]
+
+        def draw_bracket(x_ref: float, y_top: float, y_bottom: float, side: str = "left"):
+            """Dibuja una llave lateral para marcar inicio y fin de un bloque."""
+            offset = 8
+            if side == "left":
+                x1 = x_ref - offset
+                x2 = x_ref
+            else:
+                x1 = x_ref
+                x2 = x_ref + offset
+
+            self.canvas.create_line(x1, y_top, x1, y_bottom, fill="#444444")
+            self.canvas.create_line(x1, y_top, x2, y_top, fill="#444444")
+            self.canvas.create_line(x1, y_bottom, x2, y_bottom, fill="#444444")
+
+        # ------------------------------------------------------------------
+        # 1) Datos de ejemplo respetando capacidades
+        # ------------------------------------------------------------------
         max_sample_records = min(10, r, b * bfr) if bfr > 0 and b > 0 else 0
         max_sample_index_entries = min(5, ri, bi * bfri) if bfri > 0 and bi > 0 else 0
 
         names_pool = ["Juan", "Carlos", "Ana", "María", "Luis",
                       "Sofía", "Pedro", "Lucía", "David", "Steven", "Diana", "José"]
 
-        example_records = []
+        example_records: list[tuple[int, str]] = []
         for i in range(max_sample_records):
-            rec_id = 100 + i  # 100, 101, 102, ...
+            rec_id = 100 + i
             name = names_pool[i % len(names_pool)]
             example_records.append((rec_id, name))
 
-        # Distribuir registros en bloques de datos según bfr
-        data_blocks = [[] for _ in range(b)]  # lista de bloques, cada uno lista de (id, nombre)
+        # Bloques de datos
+        data_blocks: list[list[tuple[int, str]]] = [[] for _ in range(b)]
         for i, (rec_id, name) in enumerate(example_records):
             if bfr <= 0:
                 break
@@ -331,10 +396,10 @@ class IndicesView(ttk.Frame):
                 break
             data_blocks[block_idx].append((rec_id, name))
 
-        # Entradas de índice según tipo
-        index_entries = []  # lista de (indexacion, puntero)
+        # Entradas de índice
+        index_entries: list[tuple[str, str]] = []
         if index_type == "primary":
-            # Índice primario: Indexación = id del primer registro de cada bloque, Puntero = Bk
+            # primario: indexación = id del primer registro en el bloque, puntero = Bk
             for block_idx, rows in enumerate(data_blocks):
                 if not rows:
                     continue
@@ -344,14 +409,13 @@ class IndicesView(ttk.Frame):
                 if len(index_entries) >= max_sample_index_entries:
                     break
         else:
-            # Índice secundario: Indexación = nombre, Puntero = id
-            for rec_id, name in example_records:
-                index_entries.append((name, str(rec_id)))
-                if len(index_entries) >= max_sample_index_entries:
-                    break
+            # secundario: indexación = nombre, puntero = id, ORDENADO alfabéticamente
+            temp_entries = [(name, str(rec_id)) for rec_id, name in example_records]
+            temp_entries.sort(key=lambda x: x[0].lower())
+            index_entries.extend(temp_entries[:max_sample_index_entries])
 
-        # Distribuir entradas de índice en bloques de índice según bfri
-        index_blocks = [[] for _ in range(bi)]
+        # Distribuir entradas en bloques de índice
+        index_blocks: list[list[tuple[str, str]]] = [[] for _ in range(bi)]
         for i, entry in enumerate(index_entries):
             if bfri <= 0:
                 break
@@ -360,13 +424,140 @@ class IndicesView(ttk.Frame):
                 break
             index_blocks[block_idx].append(entry)
 
-        # ---------------------------------------------------------------------
-        # 2) Encabezados de columnas
-        # ---------------------------------------------------------------------
-        idx_type_text = "Primario (no denso)" if index_type == "primary" else "Secundario (denso)"
-        idx_color = "#c7e9ff" if index_type == "primary" else "#c7ffd9"
+        # ------------------------------------------------------------------
+        # 2) Índices multinivel (niveles ≥ 2) como estructuras únicas
+        # ------------------------------------------------------------------
+        if is_multilevel and len(multilevel_blocks) > 1:
+            levels_to_show = multilevel_blocks[1:][:2]  # b2, b3 (máx 2)
+            struct_w_lvl = 170
+            struct_h_lvl = struct_h
+            base_center_x = idx_center_x - struct_w_lvl - 80
+            y1_struct_lvl = margin_y
+            y2_struct_lvl = y1_struct_lvl + struct_h_lvl
 
-        # Encabezado índice de primer nivel
+            for idx_level, blocks_in_level in enumerate(levels_to_show):
+                level_num = idx_level + 2  # nivel 2, 3, ...
+                x_center = base_center_x - idx_level * (struct_w_lvl + 50)
+
+                x1_struct = x_center - struct_w_lvl / 2
+                x2_struct = x_center + struct_w_lvl / 2
+
+                self.canvas.create_rectangle(
+                    x1_struct, y1_struct_lvl, x2_struct, y2_struct_lvl,
+                    outline="#444444",
+                    fill="#f5f5f5"
+                )
+
+                inner_x1 = x1_struct + 5
+                inner_x2 = x2_struct - 5
+                mid_x = (inner_x1 + inner_x2) / 2
+
+                # Encabezados
+                self.canvas.create_text(
+                    (inner_x1 + mid_x) / 2,
+                    y1_struct_lvl + header_h / 2,
+                    text="Indexación",
+                    font=("Arial", 8, "bold"),
+                )
+                self.canvas.create_text(
+                    (mid_x + inner_x2) / 2,
+                    y1_struct_lvl + header_h / 2,
+                    text="Puntero",
+                    font=("Arial", 8, "bold"),
+                )
+
+                header_bottom = y1_struct_lvl + header_h
+                self.canvas.create_line(inner_x1, header_bottom, inner_x2, header_bottom, fill="#555555")
+                self.canvas.create_line(mid_x, y1_struct_lvl, mid_x, y2_struct_lvl, fill="#555555")
+
+                # Grid continuo
+                content_y1 = header_bottom
+                total_rows = 3 * max_rows_per_block
+                for r_line in range(total_rows):
+                    y_line = content_y1 + (r_line + 1) * row_h
+                    if y_line < y2_struct_lvl:
+                        self.canvas.create_line(inner_x1, y_line, inner_x2, y_line, fill="#bbbbbb")
+
+                # Selección de bloques representativos para este nivel
+                block_indices_lvl = pick_three_indices(blocks_in_level)
+                total_blocks_lvl = blocks_in_level
+
+                if total_blocks_lvl == 1:
+                    sections_to_draw = [("Bloque 1", block_indices_lvl[0])]
+                elif total_blocks_lvl == 2:
+                    sections_to_draw = [
+                        ("Bloque 1", block_indices_lvl[0]),
+                        ("Bloque final", block_indices_lvl[1]),
+                    ]
+                else:
+                    sections_to_draw = [
+                        ("Bloque 1", block_indices_lvl[0]),
+                        ("Bloque i", block_indices_lvl[1]),
+                        ("Bloque final", block_indices_lvl[2]),
+                    ]
+
+                current_y = content_y1
+
+                for label_text, block_idx in sections_to_draw:
+                    sec_y1 = current_y
+                    sec_y2 = sec_y1 + section_h
+
+                    # Llave a la izquierda
+                    draw_bracket(x1_struct, sec_y1, sec_y2, side="left")
+
+                    final_label = label_text
+                    if block_idx is not None:
+                        if label_text == "Bloque 1":
+                            final_label += f" (L{level_num}_B0)"
+                        elif label_text == "Bloque final":
+                            final_label += f" (L{level_num}_B{block_idx})"
+                        else:
+                            final_label += f" (L{level_num}_B{block_idx})"
+
+                    self.canvas.create_text(
+                        x1_struct - 12,
+                        (sec_y1 + sec_y2) / 2,
+                        anchor="e",
+                        text=final_label,
+                        font=("Arial", 8, "bold"),
+                        fill="#333333",
+                    )
+
+                    # Filas cosméticas
+                    for row_idx in range(min(2, max_rows_per_block)):
+                        row_y = sec_y1 + row_h * row_idx + row_h / 2
+                        idx_val = f"K{level_num}{row_idx + 1}"
+                        ptr_val = f"L{level_num}_B{block_idx if block_idx is not None else 0}"
+                        self.canvas.create_text(
+                            (inner_x1 + mid_x) / 2,
+                            row_y,
+                            text=idx_val,
+                            font=("Arial", 8),
+                        )
+                        self.canvas.create_text(
+                            (mid_x + inner_x2) / 2,
+                            row_y,
+                            text=ptr_val,
+                            font=("Arial", 8),
+                        )
+
+                    current_y = sec_y2
+
+                # Título del nivel
+                self.canvas.create_text(
+                    x_center,
+                    y1_struct_lvl - 12,
+                    text=f"Nivel {level_num} (b{level_num} = {blocks_in_level} bloques)",
+                    font=("Arial", 8, "bold"),
+                    fill="#333333",
+                )
+
+        # ------------------------------------------------------------------
+        # 3) Índice nivel 1 como estructura única
+        # ------------------------------------------------------------------
+        idx_type_text = "Primario (no denso)" if index_type == "primary" else "Secundario (denso)"
+        idx_fill = "#e3f3ff" if index_type == "primary" else "#dfffea"
+
         self.canvas.create_text(
             idx_center_x,
             margin_y - 30,
@@ -376,7 +567,146 @@ class IndicesView(ttk.Frame):
             fill="#333333",
         )
 
-        # Encabezado bloques de datos
+        start_y = margin_y
+
+        if bi <= 0:
+            self.canvas.create_text(
+                idx_center_x,
+                start_y,
+                anchor="n",
+                text="(No hay índice construido)",
+                font=("Arial", 9),
+                fill="#888888",
+            )
+        else:
+            struct_w = 200
+            x1_struct = idx_center_x - struct_w / 2
+            x2_struct = idx_center_x + struct_w / 2
+            y1_struct = start_y
+            y2_struct = y1_struct + struct_h
+
+            # Guardar borde derecho para flechas
+            idx_struct_right = x2_struct
+
+            # Marco
+            self.canvas.create_rectangle(
+                x1_struct, y1_struct, x2_struct, y2_struct,
+                outline="#444444",
+                fill=idx_fill
+            )
+
+            inner_x1 = x1_struct + 5
+            inner_x2 = x2_struct - 5
+            mid_x = (inner_x1 + inner_x2) / 2
+
+            # Encabezados
+            self.canvas.create_text(
+                (inner_x1 + mid_x) / 2,
+                y1_struct + header_h / 2,
+                text="Indexación",
+                font=("Arial", 8, "bold"),
+            )
+            self.canvas.create_text(
+                (mid_x + inner_x2) / 2,
+                y1_struct + header_h / 2,
+                text="Puntero",
+                font=("Arial", 8, "bold"),
+            )
+
+            header_bottom = y1_struct + header_h
+            self.canvas.create_line(inner_x1, header_bottom, inner_x2, header_bottom, fill="#555555")
+            self.canvas.create_line(mid_x, y1_struct, mid_x, y2_struct, fill="#555555")
+
+            content_y1 = header_bottom
+            total_rows = 3 * max_rows_per_block
+            for r_line in range(total_rows):
+                y_line = content_y1 + (r_line + 1) * row_h
+                if y_line < y2_struct:
+                    self.canvas.create_line(inner_x1, y_line, inner_x2, y_line, fill="#bbbbbb")
+
+            # Capacidad
+            if bfri > 0:
+                self.canvas.create_text(
+                    idx_center_x,
+                    y2_struct + 12,
+                    anchor="n",
+                    text=f"Capacidad: {bfri} entradas/bloque",
+                    font=("Arial", 8, "italic"),
+                    fill="#333333",
+                )
+
+            total_blocks_idx = bi
+            block_indices_idx = pick_three_indices(total_blocks_idx)
+
+            if total_blocks_idx == 1:
+                sections_to_draw = [("Bloque 1", block_indices_idx[0])]
+            elif total_blocks_idx == 2:
+                sections_to_draw = [
+                    ("Bloque 1", block_indices_idx[0]),
+                    ("Bloque final", block_indices_idx[1]),
+                ]
+            else:
+                sections_to_draw = [
+                    ("Bloque 1", block_indices_idx[0]),
+                    ("Bloque i", block_indices_idx[1]),
+                    ("Bloque final", block_indices_idx[2]),
+                ]
+
+            struct_edge_x = x2_struct
+            label_x = x2_struct + 12
+            label_anchor = "w"
+            current_y = content_y1
+
+            for label_text, block_idx in sections_to_draw:
+                sec_y1 = current_y
+                sec_y2 = sec_y1 + section_h
+                center_y = (sec_y1 + sec_y2) / 2
+
+                draw_bracket(struct_edge_x, sec_y1, sec_y2, side="right")
+
+                final_label = label_text
+                if block_idx is not None:
+                    final_label += f" (I{block_idx})"
+
+                self.canvas.create_text(
+                    label_x,
+                    center_y,
+                    anchor=label_anchor,
+                    text=final_label,
+                    font=("Arial", 8, "bold"),
+                    fill="#333333",
+                )
+
+                # Guardar centros para flechas
+                if label_text.startswith("Bloque 1"):
+                    idx_block_centers["first"] = center_y
+                elif label_text.startswith("Bloque i"):
+                    idx_block_centers["middle"] = center_y
+                elif label_text.startswith("Bloque final"):
+                    idx_block_centers["last"] = center_y
+
+                if block_idx is not None and block_idx < len(index_blocks):
+                    rows = index_blocks[block_idx]
+                    for row_idx, (idx_val, ptr_val) in enumerate(rows[:max_rows_per_block]):
+                        row_y = sec_y1 + row_h * row_idx + row_h / 2
+                        self.canvas.create_text(
+                            (inner_x1 + mid_x) / 2,
+                            row_y,
+                            text=str(idx_val),
+                            font=("Arial", 8),
+                        )
+                        self.canvas.create_text(
+                            (mid_x + inner_x2) / 2,
+                            row_y,
+                            text=str(ptr_val),
+                            font=("Arial", 8),
+                        )
+
+                current_y = sec_y2
+
+        # ------------------------------------------------------------------
+        # 4) Bloques de datos como estructura única
+        # ------------------------------------------------------------------
         self.canvas.create_text(
             data_center_x,
             margin_y - 30,
@@ -386,228 +716,6 @@ class IndicesView(ttk.Frame):
             fill="#333333",
         )
 
-        start_y = margin_y
-
-        max_blocks_draw_idx = min(3, bi)   # menos bloques para que se vea limpio
-        max_blocks_draw_data = min(3, b)
-
-        header_h = 20
-        row_h = 14
-        max_rows_per_block = 4  # filas visibles por bloque
-
-        # ---------------------------------------------------------------------
-        # 3) Bloques de NIVELES MULTINIVEL (>=2), a la izquierda en "cadena"
-        # ---------------------------------------------------------------------
-        # No mostramos el nivel 1 aquí porque es el índice base (I0, I1, ...)
-        if is_multilevel and len(multilevel_blocks) > 1:
-            # Niveles a mostrar: del 2 en adelante
-            # multilevel_blocks = [b1, b2, b3, ...]
-            levels_to_show = multilevel_blocks[1:]  # quitamos b1
-            # No saturar: como máximo 3 niveles extra visibles
-            levels_to_show = levels_to_show[:3]
-
-            # Cada nivel ocupa una columna hacia la izquierda del índice base
-            horizontal_gap = 20
-            lvl_block_w = 130
-            lvl_block_h = 70
-
-            # x_center del nivel 2: a la izquierda del índice base
-            # x_center del nivel 3: más a la izquierda, etc.
-            level_centers = []
-            for i in range(len(levels_to_show)):
-                offset = (i + 1)  # nivel 2 -> 1, nivel 3 -> 2...
-                x_center = idx_center_x - offset * (lvl_block_w + horizontal_gap)
-                level_centers.append(x_center)
-
-            lvl_y = start_y
-
-            for idx_level, blocks_in_level in enumerate(levels_to_show):
-                level_num = idx_level + 2  # porque empezamos en nivel 2
-                x_center = level_centers[idx_level]
-
-                x1 = x_center - lvl_block_w / 2
-                y1 = lvl_y
-                x2 = x_center + lvl_block_w / 2
-                y2 = y1 + lvl_block_h
-
-                # Marco del bloque
-                self.canvas.create_rectangle(
-                    x1, y1, x2, y2,
-                    fill="#f5f5f5",
-                    outline="#555555"
-                )
-
-                # Línea vertical para columnas
-                mid_x = (x1 + x2) / 2
-                self.canvas.create_line(mid_x, y1, mid_x, y2, fill="#555555")
-
-                # Encabezados de columnas
-                self.canvas.create_text(
-                    (x1 + mid_x) / 2,
-                    y1 + header_h / 2,
-                    text="Indexación",
-                    font=("Arial", 8, "bold"),
-                )
-                self.canvas.create_text(
-                    (mid_x + x2) / 2,
-                    y1 + header_h / 2,
-                    text="Puntero",
-                    font=("Arial", 8, "bold"),
-                )
-
-                # Línea bajo encabezado
-                header_bottom = y1 + header_h
-                self.canvas.create_line(x1, header_bottom, x2, header_bottom, fill="#555555")
-
-                # Líneas horizontales de filas (solo 2 filas de ejemplo)
-                for r_line in range(2):
-                    y_line = header_bottom + (r_line + 1) * row_h
-                    if y_line < y2:
-                        self.canvas.create_line(x1, y_line, x2, y_line, fill="#bbbbbb")
-
-                # Contenido de ejemplo (primer bloque del nivel)
-                # Notación: L{level_num}_B0, L{level_num}_B1 ...
-                example_rows = [
-                    (f"K{level_num}1", f"L{level_num}_B0"),
-                    (f"K{level_num}2", f"L{level_num}_B1" if blocks_in_level > 1 else f"L{level_num}_B0"),
-                ]
-                for r_idx, (idx_val, ptr_val) in enumerate(example_rows):
-                    row_y = header_bottom + row_h * r_idx + row_h / 2
-                    self.canvas.create_text(
-                        (x1 + mid_x) / 2,
-                        row_y,
-                        text=idx_val,
-                        font=("Arial", 8),
-                    )
-                    self.canvas.create_text(
-                        (mid_x + x2) / 2,
-                        row_y,
-                        text=ptr_val,
-                        font=("Arial", 8),
-                    )
-
-                # Etiqueta del bloque arriba con info de # de bloques del nivel
-                self.canvas.create_text(
-                    x_center,
-                    y1 - 10,
-                    text=f"Nivel {level_num}  (b{level_num} = {blocks_in_level} bloques)",
-                    font=("Arial", 8, "bold"),
-                    fill="#333333",
-                )
-
-        # ---------------------------------------------------------------------
-        # 4) Bloques de ÍNDICE de primer nivel (centro-izquierda)
-        # ---------------------------------------------------------------------
-        if bi <= 0:
-            self.canvas.create_text(
-                idx_center_x,
-                start_y,
-                anchor="n",
-                text="(No hay bloques de índice)",
-                font=("Arial", 9),
-                fill="#888888",
-            )
-        else:
-            y = start_y
-            first_idx_block_pos = None
-
-            for b_idx in range(max_blocks_draw_idx):
-                x1 = idx_center_x - block_w / 2
-                y1 = y
-                x2 = idx_center_x + block_w / 2
-                y2 = y1 + block_h
-
-                if first_idx_block_pos is None:
-                    first_idx_block_pos = (x2, (y1 + y2) / 2)
-
-                # Marco del bloque
-                self.canvas.create_rectangle(
-                    x1, y1, x2, y2,
-                    fill=idx_color,
-                    outline="#555555"
-                )
-
-                # Línea vertical para dividir columnas
-                mid_x = (x1 + x2) / 2
-                self.canvas.create_line(mid_x, y1, mid_x, y2, fill="#555555")
-
-                # Encabezados de columnas
-                self.canvas.create_text(
-                    (x1 + mid_x) / 2,
-                    y1 + header_h / 2,
-                    text="Indexación",
-                    font=("Arial", 8, "bold"),
-                )
-                self.canvas.create_text(
-                    (mid_x + x2) / 2,
-                    y1 + header_h / 2,
-                    text="Puntero",
-                    font=("Arial", 8, "bold"),
-                )
-
-                # Línea bajo encabezado
-                header_bottom = y1 + header_h
-                self.canvas.create_line(x1, header_bottom, x2, header_bottom, fill="#555555")
-
-                # Líneas horizontales para filas
-                for r_line in range(max_rows_per_block):
-                    y_line = header_bottom + (r_line + 1) * row_h
-                    if y_line < y2:
-                        self.canvas.create_line(x1, y_line, x2, y_line, fill="#bbbbbb")
-
-                # Datos de este bloque de índice
-                entries = index_blocks[b_idx] if b_idx < len(index_blocks) else []
-                for row_idx, (idx_val, ptr_val) in enumerate(entries[:max_rows_per_block]):
-                    row_y = header_bottom + row_h * row_idx + row_h / 2
-                    self.canvas.create_text(
-                        (x1 + mid_x) / 2,
-                        row_y,
-                        text=str(idx_val),
-                        font=("Arial", 8),
-                    )
-                    self.canvas.create_text(
-                        (mid_x + x2) / 2,
-                        row_y,
-                        text=str(ptr_val),
-                        font=("Arial", 8),
-                    )
-
-                # Etiqueta del bloque arriba
-                self.canvas.create_text(
-                    idx_center_x,
-                    y1 - 10,
-                    text=f"I{b_idx}",
-                    font=("Arial", 8, "bold"),
-                    fill="#333333",
-                )
-
-                y = y2 + v_spacing
-
-            if bi > max_blocks_draw_idx:
-                self.canvas.create_text(
-                    idx_center_x,
-                    y,
-                    anchor="n",
-                    text=f"... (total {bi} bloques de índice)",
-                    font=("Arial", 8),
-                    fill="#666666",
-                )
-
-            # Capacidad del bloque índice junto al primer bloque
-            if first_idx_block_pos and bfri > 0:
-                cap_x, cap_y = first_idx_block_pos
-                self.canvas.create_text(
-                    cap_x + 10,
-                    cap_y,
-                    anchor="w",
-                    text=f"Capacidad: {bfri} entradas/bloque",
-                    font=("Arial", 8, "italic"),
-                    fill="#333333",
-                )
-
-        # ---------------------------------------------------------------------
-        # 5) Bloques de DATOS (derecha)
-        # ---------------------------------------------------------------------
         if b <= 0:
             self.canvas.create_text(
                 data_center_x,
@@ -618,128 +726,184 @@ class IndicesView(ttk.Frame):
                 fill="#888888",
             )
         else:
-            y = start_y
-            first_data_block_pos = None
+            struct_w = 200
+            x1_struct = data_center_x - struct_w / 2
+            x2_struct = data_center_x + struct_w / 2
+            y1_struct = start_y
+            y2_struct = y1_struct + struct_h
 
-            for b_idx in range(max_blocks_draw_data):
-                x1 = data_center_x - block_w / 2
-                y1 = y
-                x2 = data_center_x + block_w / 2
-                y2 = y1 + block_h
+            # Guardar borde izquierdo para flechas
+            data_struct_left = x1_struct
 
-                if first_data_block_pos is None:
-                    first_data_block_pos = (x1, (y1 + y2) / 2)
+            self.canvas.create_rectangle(
+                x1_struct, y1_struct, x2_struct, y2_struct,
+                outline="#444444",
+                fill="#f0f0f0"
+            )
 
-                # Marco del bloque
-                self.canvas.create_rectangle(
-                    x1, y1, x2, y2,
-                    fill="#e0e0e0",
-                    outline="#555555"
-                )
+            inner_x1 = x1_struct + 5
+            inner_x2 = x2_struct - 5
+            mid_x = (inner_x1 + inner_x2) / 2
 
-                # Línea vertical para dividir columnas
-                mid_x = (x1 + x2) / 2
-                self.canvas.create_line(mid_x, y1, mid_x, y2, fill="#555555")
+            self.canvas.create_text(
+                (inner_x1 + mid_x) / 2,
+                y1_struct + header_h / 2,
+                text="id",
+                font=("Arial", 8, "bold"),
+            )
+            self.canvas.create_text(
+                (mid_x + inner_x2) / 2,
+                y1_struct + header_h / 2,
+                text="nombre",
+                font=("Arial", 8, "bold"),
+            )
 
-                # Encabezados de columnas
-                self.canvas.create_text(
-                    (x1 + mid_x) / 2,
-                    y1 + header_h / 2,
-                    text="id",
-                    font=("Arial", 8, "bold"),
-                )
-                self.canvas.create_text(
-                    (mid_x + x2) / 2,
-                    y1 + header_h / 2,
-                    text="nombre",
-                    font=("Arial", 8, "bold"),
-                )
+            header_bottom = y1_struct + header_h
+            self.canvas.create_line(inner_x1, header_bottom, inner_x2, header_bottom, fill="#555555")
+            self.canvas.create_line(mid_x, y1_struct, mid_x, y2_struct, fill="#555555")
 
-                # Línea bajo encabezado
-                header_bottom = y1 + header_h
-                self.canvas.create_line(x1, header_bottom, x2, header_bottom, fill="#555555")
+            content_y1 = header_bottom
+            total_rows = 3 * max_rows_per_block
+            for r_line in range(total_rows):
+                y_line = content_y1 + (r_line + 1) * row_h
+                if y_line < y2_struct:
+                    self.canvas.create_line(inner_x1, y_line, inner_x2, y_line, fill="#bbbbbb")
 
-                # Líneas horizontales para filas
-                for r_line in range(max_rows_per_block):
-                    y_line = header_bottom + (r_line + 1) * row_h
-                    if y_line < y2:
-                        self.canvas.create_line(x1, y_line, x2, y_line, fill="#bbbbbb")
-
-                # Registros de este bloque de datos
-                rows = data_blocks[b_idx] if b_idx < len(data_blocks) else []
-                for row_idx, (rec_id, name) in enumerate(rows[:max_rows_per_block]):
-                    row_y = header_bottom + row_h * row_idx + row_h / 2
-                    self.canvas.create_text(
-                        (x1 + mid_x) / 2,
-                        row_y,
-                        text=str(rec_id),
-                        font=("Arial", 8),
-                    )
-                    self.canvas.create_text(
-                        (mid_x + x2) / 2,
-                        row_y,
-                        text=str(name),
-                        font=("Arial", 8),
-                    )
-
-                # Etiqueta del bloque arriba
+            if bfr > 0:
                 self.canvas.create_text(
                     data_center_x,
-                    y1 - 10,
-                    text=f"B{b_idx}",
-                    font=("Arial", 8, "bold"),
-                    fill="#333333",
-                )
-
-                y = y2 + v_spacing
-
-            if b > max_blocks_draw_data:
-                self.canvas.create_text(
-                    data_center_x,
-                    y,
+                    y2_struct + 12,
                     anchor="n",
-                    text=f"... (total {b} bloques de datos)",
-                    font=("Arial", 8),
-                    fill="#666666",
-                )
-
-            # Capacidad del bloque de datos junto al primer bloque
-            if first_data_block_pos and bfr > 0:
-                cap_x, cap_y = first_data_block_pos
-                self.canvas.create_text(
-                    cap_x - 10,
-                    cap_y,
-                    anchor="e",
                     text=f"Capacidad: {bfr} registros/bloque",
                     font=("Arial", 8, "italic"),
                     fill="#333333",
                 )
 
-        # ---------------------------------------------------------------------
-        # 6) Leyenda final (incluyendo multinivel)
-        # ---------------------------------------------------------------------
+            total_blocks_data = b
+            block_indices_data = pick_three_indices(total_blocks_data)
+
+            if total_blocks_data == 1:
+                sections_to_draw = [("Bloque 1", block_indices_data[0])]
+            elif total_blocks_data == 2:
+                sections_to_draw = [
+                    ("Bloque 1", block_indices_data[0]),
+                    ("Bloque final", block_indices_data[1]),
+                ]
+            else:
+                sections_to_draw = [
+                    ("Bloque 1", block_indices_data[0]),
+                    ("Bloque j", block_indices_data[1]),
+                    ("Bloque final", block_indices_data[2]),
+                ]
+
+            struct_edge_x = x2_struct
+            label_x = x2_struct + 12
+            label_anchor = "w"
+            current_y = content_y1
+
+            for label_text, block_idx in sections_to_draw:
+                sec_y1 = current_y
+                sec_y2 = sec_y1 + section_h
+                center_y = (sec_y1 + sec_y2) / 2
+
+                draw_bracket(struct_edge_x, sec_y1, sec_y2, side="right")
+
+                final_label = label_text
+                if block_idx is not None:
+                    final_label += f" (B{block_idx})"
+
+                self.canvas.create_text(
+                    label_x,
+                    center_y,
+                    anchor=label_anchor,
+                    text=final_label,
+                    font=("Arial", 8, "bold"),
+                    fill="#333333",
+                )
+
+                # Guardar centros para flechas
+                if label_text.startswith("Bloque 1"):
+                    data_block_centers["first"] = center_y
+                elif label_text.startswith("Bloque j"):
+                    data_block_centers["middle"] = center_y
+                elif label_text.startswith("Bloque final"):
+                    data_block_centers["last"] = center_y
+
+                if block_idx is not None and block_idx < len(data_blocks):
+                    rows = data_blocks[block_idx]
+                    for row_idx, (rec_id, name) in enumerate(rows[:max_rows_per_block]):
+                        row_y = sec_y1 + row_h * row_idx + row_h / 2
+                        self.canvas.create_text(
+                            (inner_x1 + mid_x) / 2,
+                            row_y,
+                            text=str(rec_id),
+                            font=("Arial", 8),
+                        )
+                        self.canvas.create_text(
+                            (mid_x + inner_x2) / 2,
+                            row_y,
+                            text=str(name),
+                            font=("Arial", 8),
+                        )
+
+                current_y = sec_y2
+
+        # ------------------------------------------------------------------
+        # 5) Flechas índice → datos
+        # ------------------------------------------------------------------
+        if idx_struct_right is not None and data_struct_left is not None:
+            pairs: list[tuple[str, float, float]] = []
+
+            if "first" in idx_block_centers and "first" in data_block_centers:
+                pairs.append(("first", idx_block_centers["first"], data_block_centers["first"]))
+            if "middle" in idx_block_centers and "middle" in data_block_centers:
+                pairs.append(("middle", idx_block_centers["middle"], data_block_centers["middle"]))
+            if "last" in idx_block_centers and "last" in data_block_centers:
+                pairs.append(("last", idx_block_centers["last"], data_block_centers["last"]))
+
+            for kind, y_idx, y_data in pairs:
+                offset = 0
+                if kind == "middle":
+                    offset = 4
+                elif kind == "last":
+                    offset = 8
+
+                self.canvas.create_line(
+                    idx_struct_right,
+                    y_idx + offset,
+                    data_struct_left,
+                    y_data + offset,
+                    arrow=tk.LAST,
+                    smooth=True,
+                    fill="#444444",
+                )
+
+        # ------------------------------------------------------------------
+        # 6) Leyenda
+        # ------------------------------------------------------------------
         if is_multilevel and multilevel_blocks:
             niveles_str = " → ".join(
                 f"b{idx+1}={val}" for idx, val in enumerate(multilevel_blocks)
             )
             multinivel_line = (
                 f"  • Niveles de índice (multinivel): {niveles_str} con f0 = bfri = {bfri}.\n"
-                "  • Accesos a memoria = nº niveles (b1..bn) + 1 (bloque de datos)."
+                "  • Accesos a memoria (multinivel) ≈ nº niveles (b1..bn) + 1 (bloque de datos)."
             )
         else:
             multinivel_line = (
                 "  • Índice simple: accesos a memoria ≈ ceil(log₂(bi)) + 1.\n"
-                "  • Activa 'Índice multinivel' para ver los niveles b1, b2, ..."
+                "  • Activa \"Índice multinivel\" para ver los niveles superiores (b2, b3, ...)."
             )
 
         legend_text = (
             "Ejemplo visual:\n"
-            "  • ÍNDICE primario: Indexación = id clave de bloque, Puntero = Bk.\n"
-            "  • ÍNDICE secundario: Indexación = nombre, Puntero = id.\n"
-            "  • Los datos (id, nombre) son de ejemplo, pero b, bi, bfr y bfri\n"
-            "    provienen de los cálculos reales.\n"
+            "  • El ÍNDICE (nivel 1) y los BLOQUES DE DATOS se muestran como estructuras únicas divididas en bloques.\n"
+            "  • Las llaves indican Bloque 1, Bloque i/j y Bloque final (solo si hay suficientes bloques).\n"
+            "  • Las flechas conectan los bloques lógicos del índice con los bloques físicos de datos.\n"
+            "  • Los datos (id, nombre) son de ejemplo; r, b, bi, bfr y bfri provienen de los cálculos reales.\n"
             f"{multinivel_line}"
         )
+
         self.canvas.create_text(
             w / 2,
             h - 8,
@@ -748,6 +912,11 @@ class IndicesView(ttk.Frame):
             font=("Arial", 9),
             fill="#444444",
         )
+
+
+
+
+
 
     # -------------------------------------------------------------------------
     # Guardar / cargar (placeholders)
@@ -763,3 +932,17 @@ class IndicesView(ttk.Frame):
     def _on_load(self) -> None:
         # Placeholder para funcionalidad futura
         pass
+
+    def _on_clear(self) -> None:
+        """Limpia todo el canvas y elimina resultados anteriores."""
+        self.canvas.delete("all")
+        self._last_calc = None
+        
+        # Mensaje visual opcional
+        self.canvas.create_text(
+            10, 10,
+            anchor="nw",
+            text="Pantalla limpiada. Introduce valores y pulsa 'Calcular'.",
+            fill="#777777",
+            font=("Arial", 10, "italic"),
+        )
