@@ -44,6 +44,8 @@ class RetroApp:
 		from app.views.grafo_binario_view import GrafoBinarioView
 		from app.views.grafo_matrices_view import GrafoMatricesView
 		from app.views.arboles_view import ArbolesView
+		from app.views.arboles_menu_view import ArbolesMenuView
+		from app.views.floyd_view import FloydView
 
 
 		available_views: Dict[str, Type[tk.Frame]] = {
@@ -62,6 +64,8 @@ class RetroApp:
 			"grafo_binario": GrafoBinarioView,
 			"grafo_matrices": GrafoMatricesView,
 			"arboles": ArbolesView,
+			"arboles_menu": ArbolesMenuView,
+			"floyd": FloydView,
 			"bloques": BloquesView,
 			"binario_ext": BloquesBinariaView,
 			"transformacion": TransformacionClavesView,

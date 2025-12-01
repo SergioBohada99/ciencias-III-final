@@ -33,21 +33,21 @@ class GrafosView(ttk.Frame):
 		)
 		btn_binario.grid(row=0, column=1, padx=10, pady=10)
 
-		# Botón para matrices de grafo dirigido
-		btn_matrices = ttk.Button(
+		# Botón para Algoritmo de Floyd
+		btn_floyd = ttk.Button(
 			panel, 
-			text="Matrices de Grafo Dirigido", 
+			text="Algoritmo de Floyd", 
 			style="Retro.TButton", 
-			command=lambda: app.navigate("grafo_matrices")
+			command=lambda: app.navigate("floyd")
 		)
-		btn_matrices.grid(row=1, column=0, padx=10, pady=10)
+		btn_floyd.grid(row=1, column=0, padx=10, pady=10)
 
-		# Botón para árbol generador mínimo
+		# Botón para Árboles (submódulos)
 		btn_arboles = ttk.Button(
 			panel, 
-			text="Árbol Generador Mínimo", 
+			text="Árboles", 
 			style="Retro.TButton", 
-			command=lambda: app.navigate("arboles")
+			command=lambda: app.navigate("arboles_menu")
 		)
 		btn_arboles.grid(row=1, column=1, padx=10, pady=10)
 
