@@ -27,7 +27,7 @@ class GrafosView(ttk.Frame):
 		# Botón para operaciones con dos grafos
 		btn_binario = ttk.Button(
 			panel, 
-			text="Operaciones con Dos Grafos", 
+			text="Operaciones con Varios Grafos", 
 			style="Retro.TButton", 
 			command=lambda: app.navigate("grafo_binario")
 		)
