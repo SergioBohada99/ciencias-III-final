@@ -1,6 +1,7 @@
 import math
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
+import json
 
 
 class IndicesView(ttk.Frame):
@@ -46,7 +47,7 @@ class IndicesView(ttk.Frame):
         row += 1
         ttk.Label(ops, text="Tipo de índice:").grid(row=row, column=0, sticky="w", pady=(8, 2))
 
-        self.index_type = tk.StringVar(value="primary")
+        self.index_type = tk.StringVar(value="primario")
         self.cmb_index_type = ttk.Combobox(
             ops,
             textvariable=self.index_type,
@@ -62,9 +63,9 @@ class IndicesView(ttk.Frame):
         def _update_index_type(event):
             selected = self.cmb_index_type.get()
             if selected == "Primario":
-                self.index_type.set("primary")
+                self.index_type.set("primario")
             else:
-                self.index_type.set("secondary")
+                self.index_type.set("secundario")
 
         self.cmb_index_type.bind("<<ComboboxSelected>>", _update_index_type)
 
@@ -212,7 +213,7 @@ class IndicesView(ttk.Frame):
             return
 
         # ri = nº total de entradas del índice
-        if self.index_type.get() == "primary":
+        if self.index_type.get() == "primario":
             # Índice primario (no denso): una entrada por bloque de datos
             ri = b
         else:
@@ -398,7 +399,7 @@ class IndicesView(ttk.Frame):
 
         # Entradas de índice
         index_entries: list[tuple[str, str]] = []
-        if index_type == "primary":
+        if index_type == "primario":
             # primario: indexación = id del primer registro en el bloque, puntero = Bk
             for block_idx, rows in enumerate(data_blocks):
                 if not rows:
@@ -555,8 +556,8 @@ class IndicesView(ttk.Frame):
         # ------------------------------------------------------------------
         # 3) Índice nivel 1 como estructura única
         # ------------------------------------------------------------------
-        idx_type_text = "Primario (no denso)" if index_type == "primary" else "Secundario (denso)"
-        idx_fill = "#e3f3ff" if index_type == "primary" else "#dfffea"
+        idx_type_text = "Primario (no denso)" if index_type == "primario" else "Secundario (denso)"
+        idx_fill = "#e3f3ff" if index_type == "primario" else "#dfffea"
 
         self.canvas.create_text(
             idx_center_x,
@@ -918,20 +919,180 @@ class IndicesView(ttk.Frame):
 
 
 
+
     # -------------------------------------------------------------------------
-    # Guardar / cargar (placeholders)
+    # Guardar configuración y resultados en un archivo JSON
     # -------------------------------------------------------------------------
     def _on_save(self) -> None:
-        # Placeholder para funcionalidad futura
-        pass
+        if not hasattr(self, "_last_calc") or not self._last_calc:
+            messagebox.showinfo("Guardar", "No hay cálculos para guardar todavía.")
+            return
 
+        file_path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Guardar configuración de índices",
+            defaultextension=".json",
+            filetypes=[("Archivos JSON", "*.json"), ("Todos los archivos", "*.*")]
+        )
+        if not file_path:
+            return  # Usuario canceló
+
+        # Construimos el payload a guardar
+        data_to_save = {
+            "params": {},
+            "calc": self._last_calc,
+        }
+
+        # Intentamos guardar también los campos de entrada si existen
+        def safe_get_entry(name: str) -> str | None:
+            widget = getattr(self, name, None)
+            try:
+                return widget.get().strip() if widget is not None else None
+            except Exception:
+                return None
+
+        data_to_save["params"] = {
+            "r": safe_get_entry("entry_r"),
+            "B": safe_get_entry("entry_B"),
+            "R": safe_get_entry("entry_R"),
+            "v": safe_get_entry("entry_v"),
+            "p": safe_get_entry("entry_p"),
+            "B_index": safe_get_entry("entry_B_index"),
+            "index_type": getattr(self, "index_type", None).get() if hasattr(self, "index_type") else None,
+            "is_multilevel": getattr(self, "is_multilevel_var", None).get() if hasattr(self, "is_multilevel_var") else None,
+        }
+
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(data_to_save, f, ensure_ascii=False, indent=2)
+            messagebox.showinfo("Guardar", "Configuración guardada correctamente.")
+        except Exception as e:
+            messagebox.showerror("Error al guardar", f"No se pudo guardar el archivo:\n{e}")
+
+    # -------------------------------------------------------------------------
+    # Guardar y cerrar la vista
+    # -------------------------------------------------------------------------
     def _on_save_and_close(self) -> None:
-        # Placeholder para funcionalidad futura
+        if not hasattr(self, "app") or self.app is None:
+            # Por si acaso, si no hay app, solo intenta guardar
+            self._on_save()
+            return
+
+        if not hasattr(self, "_last_calc") or not self._last_calc:
+            # Si no hay nada calculado, solo navegar
+            self.app.navigate("externas")
+            return
+
+        file_path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Guardar configuración de índices antes de salir",
+            defaultextension=".json",
+            filetypes=[("Archivos JSON", "*.json"), ("Todos los archivos", "*.*")]
+        )
+        if file_path:
+            # Reutilizamos la lógica de _on_save pero forzando la ruta
+            data_to_save = {
+                "params": {},
+                "calc": self._last_calc,
+            }
+
+            def safe_get_entry(name: str) -> str | None:
+                widget = getattr(self, name, None)
+                try:
+                    return widget.get().strip() if widget is not None else None
+                except Exception:
+                    return None
+
+            data_to_save["params"] = {
+                "r": safe_get_entry("entry_r"),
+                "B": safe_get_entry("entry_B"),
+                "R": safe_get_entry("entry_R"),
+                "v": safe_get_entry("entry_v"),
+                "p": safe_get_entry("entry_p"),
+                "B_index": safe_get_entry("entry_B_index"),
+                "index_type": getattr(self, "index_type", None).get() if hasattr(self, "index_type") else None,
+                "is_multilevel": getattr(self, "is_multilevel_var", None).get() if hasattr(self, "is_multilevel_var") else None,
+            }
+
+            try:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(data_to_save, f, ensure_ascii=False, indent=2)
+                messagebox.showinfo("Guardar", "Configuración guardada correctamente.")
+            except Exception as e:
+                messagebox.showerror("Error al guardar", f"No se pudo guardar el archivo:\n{e}")
+                # Si falla el guardado, no salimos
+                return
+
+        # Navegamos de vuelta al menú anterior
         self.app.navigate("externas")
 
+    # -------------------------------------------------------------------------
+    # Cargar configuración y resultados desde un archivo JSON
+    # -------------------------------------------------------------------------
     def _on_load(self) -> None:
-        # Placeholder para funcionalidad futura
-        pass
+        file_path = filedialog.askopenfilename(
+            parent=self,
+            title="Cargar configuración de índices",
+            defaultextension=".json",
+            filetypes=[("Archivos JSON", "*.json"), ("Todos los archivos", "*.*")]
+        )
+        if not file_path:
+            return  # Usuario canceló
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data_loaded = json.load(f)
+        except Exception as e:
+            messagebox.showerror("Error al cargar", f"No se pudo leer el archivo:\n{e}")
+            return
+
+        # Restaurar cálculos
+        calc = data_loaded.get("calc")
+        if calc:
+            self._last_calc = calc
+        else:
+            messagebox.showwarning("Cargar", "El archivo no contiene información de cálculos.")
+            return
+
+        # Restaurar parámetros de entrada si los widgets existen
+        params = data_loaded.get("params", {})
+
+        def safe_set_entry(name: str, value: str | None):
+            widget = getattr(self, name, None)
+            if widget is not None and value is not None:
+                try:
+                    widget.delete(0, tk.END)
+                    widget.insert(0, str(value))
+                except Exception:
+                    pass
+
+        safe_set_entry("entry_r", params.get("r"))
+        safe_set_entry("entry_B", params.get("B"))
+        safe_set_entry("entry_R", params.get("R"))
+        safe_set_entry("entry_v", params.get("v"))
+        safe_set_entry("entry_p", params.get("p"))
+        safe_set_entry("entry_B_index", params.get("B_index"))
+
+        # Tipo de índice (primario/secundario)
+        if hasattr(self, "index_type") and params.get("index_type"):
+            self.index_type.set(params["index_type"])
+            # Si tienes un Combobox asociado:
+            if hasattr(self, "cmb_index_type"):
+                if params["index_type"] == "primary":
+                    self.cmb_index_type.set("Primario")
+                else:
+                    self.cmb_index_type.set("Secundario")
+
+        # Índice multinivel (checkbutton)
+        if hasattr(self, "is_multilevel_var") and params.get("is_multilevel") is not None:
+            try:
+                self.is_multilevel_var.set(params["is_multilevel"])
+            except Exception:
+                pass
+
+        # Redibujar visualización con los datos cargados
+        self._draw_visualization()
+        messagebox.showinfo("Cargar", "Configuración cargada correctamente.")
 
     def _on_clear(self) -> None:
         """Limpia todo el canvas y elimina resultados anteriores."""

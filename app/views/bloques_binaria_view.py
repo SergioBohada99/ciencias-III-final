@@ -114,7 +114,7 @@ class BloquesBinariaView(ttk.Frame):
 		btn_load = ttk.Button(file_panel, text="Cargar", command=self._on_load)
 		btn_load.grid(row=0, column=2, padx=4, pady=2)
 
-		back = ttk.Button(self, text="← Volver", command=lambda: app.navigate("internas"))
+		back = ttk.Button(self, text="← Volver", command=lambda: app.navigate("externas"))
 		back.pack(pady=6)
 
 		self.app = app

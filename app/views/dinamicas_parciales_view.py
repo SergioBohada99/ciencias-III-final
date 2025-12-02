@@ -5,7 +5,9 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 from typing import List, Optional
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
+import json
+
 
 
 class HashTableParciales:
@@ -58,16 +60,15 @@ class HashTableParciales:
     
     def _existe_clave(self, clave: int) -> bool:
         """Retorna True si la clave ya está en la tabla (cubeta u overflow)."""
-        # Como insertion_order mantiene TODAS las claves existentes
-        messagebox.showwarning(
-            "Clave duplicada",
-            f"La clave {clave} ya se encuentra almacenada en la cubeta."
-        )
         return clave in self.insertion_order
 
     def insertar(self, clave: int) -> str:
-        #  verificar duplicados
+        # verificar duplicados
         if self._existe_clave(clave):
+            messagebox.showwarning(
+                "Clave duplicada",
+                f"La clave {clave} ya se encuentra almacenada en la tabla."
+            )
             return f"La clave {clave} ya se encuentra almacenada. No se permiten duplicados."
 
         ok, msg = self._insertar_en_cubeta_o_expandir_parcial(clave)
@@ -92,6 +93,48 @@ class HashTableParciales:
         except ValueError:
             # Por si acaso no está; no queremos que explote la app docente
             pass
+
+    # ------------------------------------------------------------
+    # Serialización para guardar/cargar
+    # ------------------------------------------------------------
+    def to_dict(self) -> dict:
+        return {
+            "tipo": "parciales",
+            "num_cubetas_inicial": self.num_cubetas_inicial,
+            "num_cubetas": self.num_cubetas,
+            "tam_cubeta": self.tam_cubeta,
+            "densidad_objetivo": self.densidad_objetivo,
+            "buckets": self.buckets,
+            "overflow": self.overflow,
+            "insertion_order": self.insertion_order,
+            # si usas ciclo parcial:
+            "_partial_cycle_base": getattr(self, "_partial_cycle_base", None),
+            "_partial_cycle_steps": getattr(self, "_partial_cycle_steps", 0),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "HashTableParciales":
+        num_cubetas = data["num_cubetas"]
+        tam_cubeta = data["tam_cubeta"]
+        densidad_objetivo = data["densidad_objetivo"]
+
+        obj = cls(num_cubetas=num_cubetas, tam_cubeta=tam_cubeta, densidad_objetivo=densidad_objetivo)
+        obj.num_cubetas_inicial = data.get("num_cubetas_inicial", num_cubetas)
+        obj.buckets = data["buckets"]
+        obj.overflow = data["overflow"]
+        obj.insertion_order = data.get("insertion_order", [])
+
+        obj.total_registros = 0
+        for b in range(obj.num_cubetas):
+            for v in obj.buckets[b]:
+                if v is not None:
+                    obj.total_registros += 1
+            obj.total_registros += len(obj.overflow[b])
+
+        obj._partial_cycle_base = data.get("_partial_cycle_base", obj.num_cubetas)
+        obj._partial_cycle_steps = data.get("_partial_cycle_steps", 0)
+
+        return obj
 
     def eliminar(self, clave: int) -> str:
         bucket_idx = clave % self.num_cubetas
@@ -293,7 +336,7 @@ class DinamicasParcialesView(ttk.Frame):
         # Título
         self.label_title = ttk.Label(
             self,
-            text="Dinámicas de Hash – Expansiones y Reducciones TOTALES",
+            text="Dinámicas de Hash – Expansiones y Reducciones Parciales",
             font=("TkDefaultFont", 14, "bold"),
         )
 
@@ -392,6 +435,30 @@ class DinamicasParcialesView(ttk.Frame):
         )
         self.canvas.bind("<Configure>", lambda e: self._draw_table())
 
+        # === BOTONES INFERIORES (Guardar / Cargar) ===
+        self.frame_bottom_buttons = ttk.Frame(self, padding=10)
+
+        self.btn_save_close = ttk.Button(
+            self.frame_bottom_buttons,
+            text="Guardar y cerrar",
+            command=self._on_save_and_close,
+            state="disabled",
+        )
+
+        self.btn_save = ttk.Button(
+            self.frame_bottom_buttons,
+            text="Guardar",
+            command=self._on_save,
+            state="disabled",
+        )
+
+        self.btn_load = ttk.Button(
+            self.frame_bottom_buttons,
+            text="Cargar",
+            command=self._on_load,
+        )
+
+
         # Estado / log
         self.label_estado = ttk.Label(self, text="Tabla no inicializada.")
         self.label_log = ttk.Label(
@@ -401,6 +468,14 @@ class DinamicasParcialesView(ttk.Frame):
             wraplength=780,
             justify="left",
         )
+
+        # Botones inferiores (Guardar / Cargar)
+        self.frame_bottom_buttons.grid(row=6, column=0, pady=10, sticky="w")
+
+        # Ubicar botones centrados en el frame
+        self.btn_save_close.grid(row=0, column=0, padx=10)
+        self.btn_save.grid(row=0, column=1, padx=10)
+        self.btn_load.grid(row=0, column=2, padx=10)
 
 
     def _configure_layout(self) -> None:
@@ -429,6 +504,106 @@ class DinamicasParcialesView(ttk.Frame):
         # La fila 99 (botón volver) no se estira
         self.rowconfigure(99, weight=0)
 
+    # ------------------------------------------------------------
+    # Guardar / Cargar
+    # ------------------------------------------------------------
+    def _on_save(self) -> None:
+        if not self.hash_table:
+            messagebox.showwarning("Guardar tabla", "Primero inicializa la tabla para poder guardarla.")
+            return
+
+        filename = filedialog.asksaveasfilename(
+            title="Guardar tabla de dinámicas parciales",
+            defaultextension=".json",
+            filetypes=[("Archivos JSON", "*.json"), ("Todos los archivos", "*.*")],
+        )
+        if not filename:
+            return  # usuario canceló
+
+        try:
+            data = self.hash_table.to_dict()
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            messagebox.showinfo("Guardar tabla", f"Tabla guardada correctamente en:\n{filename}")
+        except Exception as e:
+            messagebox.showerror("Error al guardar", f"No se pudo guardar la tabla:\n{e}")
+
+    def _on_save_and_close(self) -> None:
+        """
+        Guarda la tabla y luego vuelve a la vista anterior (externas).
+        """
+        if not self.hash_table:
+            messagebox.showwarning("Guardar tabla", "Primero inicializa la tabla para poder guardarla.")
+            return
+
+        filename = filedialog.asksaveasfilename(
+            title="Guardar tabla de dinámicas parciales",
+            defaultextension=".json",
+            filetypes=[("Archivos JSON", "*.json"), ("Todos los archivos", "*.*")],
+        )
+        if not filename:
+            return  # usuario canceló
+
+        try:
+            data = self.hash_table.to_dict()
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            messagebox.showinfo("Guardar tabla", f"Tabla guardada correctamente en:\n{filename}")
+            # Cerrar (volver) tras guardar
+            self.app.navigate("externas")
+        except Exception as e:
+            messagebox.showerror("Error al guardar", f"No se pudo guardar la tabla:\n{e}")
+
+    def _on_load(self) -> None:
+        """
+        Carga una tabla previamente guardada desde un archivo JSON.
+        """
+        filename = filedialog.askopenfilename(
+            title="Cargar tabla de dinámicas parciales",
+            filetypes=[("Archivos JSON", "*.json"), ("Todos los archivos", "*.*")],
+        )
+        if not filename:
+            return
+
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            # Verificación mínima de tipo
+            if data.get("tipo") not in (None, "parciales"):
+                messagebox.showwarning(
+                    "Cargar tabla",
+                    "El archivo no parece corresponder a una tabla de dinámicas parciales.",
+                )
+
+            self.hash_table = HashTableParciales.from_dict(data)
+
+            # Actualizar controles de configuración con los valores cargados
+            self.entry_cubetas.delete(0, tk.END)
+            self.entry_cubetas.insert(0, str(self.hash_table.num_cubetas))
+
+            self.entry_tam.delete(0, tk.END)
+            self.entry_tam.insert(0, str(self.hash_table.tam_cubeta))
+
+            self.entry_dens.delete(0, tk.END)
+            self.entry_dens.insert(0, str(int(self.hash_table.densidad_objetivo * 100)))
+
+            # Habilitar botones
+            self.btn_insert.config(state="normal")
+            self.btn_delete.config(state="normal")
+            self.btn_expand_total.config(state="normal")
+            self.btn_reduce_total.config(state="normal")
+            self.btn_save.config(state="normal")
+            self.btn_save_close.config(state="normal")
+
+            self._update_estado()
+            self._draw_table()
+            messagebox.showinfo("Cargar tabla", f"Tabla cargada correctamente desde:\n{filename}")
+
+        except Exception as e:
+            messagebox.showerror("Error al cargar", f"No se pudo cargar la tabla:\n{e}")
+
+
 
     # ------------------------------------------------------------
     # Callbacks
@@ -455,8 +630,11 @@ class DinamicasParcialesView(ttk.Frame):
 
         self.btn_insert.config(state="normal")
         self.btn_delete.config(state="normal")
-        self.btn_expand_partial.config(state="normal")
-        self.btn_reduce_partial.config(state="normal")
+        self.btn_expand_total.config(state="normal")
+        self.btn_reduce_total.config(state="normal")
+        # 🔹 habilitar guardar / guardar y cerrar
+        self.btn_save.config(state="normal")
+        self.btn_save_close.config(state="normal")
 
         self.label_log.config(text="Tabla inicializada correctamente.")
 

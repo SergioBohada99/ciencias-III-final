@@ -5,7 +5,8 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 from typing import List, Optional
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
+import json
 
 
 class HashTableTotales:
@@ -161,7 +162,49 @@ class HashTableTotales:
         except ValueError:
             # Por si acaso no está; no queremos que explote la app docente
             pass
+        
+    # ------------------------------------------------------------
+    # Serialización para guardar/cargar
+    # ------------------------------------------------------------
+    def to_dict(self) -> dict:
+        """
+        Devuelve un diccionario JSON-serializable con el estado de la tabla.
+        """
+        return {
+            "tipo": "totales",
+            "num_cubetas_inicial": self.num_cubetas_inicial,
+            "num_cubetas": self.num_cubetas,
+            "tam_cubeta": self.tam_cubeta,
+            "densidad_objetivo": self.densidad_objetivo,
+            "buckets": self.buckets,
+            "overflow": self.overflow,
+            "insertion_order": self.insertion_order,
+        }
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "HashTableTotales":
+        """
+        Crea una tabla a partir de un diccionario generado por to_dict().
+        """
+        num_cubetas = data["num_cubetas"]
+        tam_cubeta = data["tam_cubeta"]
+        densidad_objetivo = data["densidad_objetivo"]
+
+        obj = cls(num_cubetas=num_cubetas, tam_cubeta=tam_cubeta, densidad_objetivo=densidad_objetivo)
+        obj.num_cubetas_inicial = data.get("num_cubetas_inicial", num_cubetas)
+        obj.buckets = data["buckets"]
+        obj.overflow = data["overflow"]
+        obj.insertion_order = data.get("insertion_order", [])
+
+        # Recalcular total_registros
+        obj.total_registros = 0
+        for b in range(obj.num_cubetas):
+            for v in obj.buckets[b]:
+                if v is not None:
+                    obj.total_registros += 1
+            obj.total_registros += len(obj.overflow[b])
+
+        return obj
 
     # ------------------------------------------------------------
     # Internos: inserción con overflow
@@ -389,6 +432,31 @@ class DinamicasTotalesView(ttk.Frame):
         )
         self.btn_reduce_total.grid(row=2, column=1, padx=5, pady=10)
 
+        # === BOTONES INFERIORES (Guardar / Cargar) ===
+        self.frame_bottom_buttons = ttk.Frame(self, padding=10)
+
+        self.btn_save_close = ttk.Button(
+            self.frame_bottom_buttons,
+            text="Guardar y cerrar",
+            command=self._on_save_and_close,
+            state="disabled",
+        )
+
+        self.btn_save = ttk.Button(
+            self.frame_bottom_buttons,
+            text="Guardar",
+            command=self._on_save,
+            state="disabled",
+        )
+
+        self.btn_load = ttk.Button(
+            self.frame_bottom_buttons,
+            text="Cargar",
+            command=self._on_load,
+        )
+
+
+
         # Canvas
         self.canvas = tk.Canvas(
             self,
@@ -409,6 +477,14 @@ class DinamicasTotalesView(ttk.Frame):
             wraplength=780,
             justify="left",
         )
+
+        # Botones inferiores (Guardar / Cargar)
+        self.frame_bottom_buttons.grid(row=6, column=0, pady=10, sticky="w")
+
+        # Ubicar botones centrados en el frame
+        self.btn_save_close.grid(row=0, column=0, padx=10)
+        self.btn_save.grid(row=0, column=1, padx=10)
+        self.btn_load.grid(row=0, column=2, padx=10)
 
 
     def _configure_layout(self) -> None:
@@ -436,6 +512,105 @@ class DinamicasTotalesView(ttk.Frame):
         self.rowconfigure(3, weight=1)
         # La fila 99 (botón volver) no se estira
         self.rowconfigure(99, weight=0)
+
+    # ------------------------------------------------------------
+    # Guardar / Cargar
+    # ------------------------------------------------------------
+    def _on_save(self) -> None:
+        if not self.hash_table:
+            messagebox.showwarning("Guardar tabla", "Primero inicializa la tabla para poder guardarla.")
+            return
+
+        filename = filedialog.asksaveasfilename(
+            title="Guardar tabla de dinámicas totales",
+            defaultextension=".json",
+            filetypes=[("Archivos JSON", "*.json"), ("Todos los archivos", "*.*")],
+        )
+        if not filename:
+            return  # usuario canceló
+
+        try:
+            data = self.hash_table.to_dict()
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            messagebox.showinfo("Guardar tabla", f"Tabla guardada correctamente en:\n{filename}")
+        except Exception as e:
+            messagebox.showerror("Error al guardar", f"No se pudo guardar la tabla:\n{e}")
+
+    def _on_save_and_close(self) -> None:
+        """
+        Guarda la tabla y luego vuelve a la vista anterior (externas).
+        """
+        if not self.hash_table:
+            messagebox.showwarning("Guardar tabla", "Primero inicializa la tabla para poder guardarla.")
+            return
+
+        filename = filedialog.asksaveasfilename(
+            title="Guardar tabla de dinámicas totales",
+            defaultextension=".json",
+            filetypes=[("Archivos JSON", "*.json"), ("Todos los archivos", "*.*")],
+        )
+        if not filename:
+            return  # usuario canceló
+
+        try:
+            data = self.hash_table.to_dict()
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            messagebox.showinfo("Guardar tabla", f"Tabla guardada correctamente en:\n{filename}")
+            # Cerrar (volver) tras guardar
+            self.app.navigate("externas")
+        except Exception as e:
+            messagebox.showerror("Error al guardar", f"No se pudo guardar la tabla:\n{e}")
+
+    def _on_load(self) -> None:
+        """
+        Carga una tabla previamente guardada desde un archivo JSON.
+        """
+        filename = filedialog.askopenfilename(
+            title="Cargar tabla de dinámicas totales",
+            filetypes=[("Archivos JSON", "*.json"), ("Todos los archivos", "*.*")],
+        )
+        if not filename:
+            return
+
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            # Verificación mínima de tipo
+            if data.get("tipo") not in (None, "totales"):
+                messagebox.showwarning(
+                    "Cargar tabla",
+                    "El archivo no parece corresponder a una tabla de dinámicas totales.",
+                )
+
+            self.hash_table = HashTableTotales.from_dict(data)
+
+            # Actualizar controles de configuración con los valores cargados
+            self.entry_cubetas.delete(0, tk.END)
+            self.entry_cubetas.insert(0, str(self.hash_table.num_cubetas))
+
+            self.entry_tam.delete(0, tk.END)
+            self.entry_tam.insert(0, str(self.hash_table.tam_cubeta))
+
+            self.entry_dens.delete(0, tk.END)
+            self.entry_dens.insert(0, str(int(self.hash_table.densidad_objetivo * 100)))
+
+            # Habilitar botones
+            self.btn_insert.config(state="normal")
+            self.btn_delete.config(state="normal")
+            self.btn_expand_total.config(state="normal")
+            self.btn_reduce_total.config(state="normal")
+            self.btn_save.config(state="normal")
+            self.btn_save_close.config(state="normal")
+
+            self._update_estado()
+            self._draw_table()
+            messagebox.showinfo("Cargar tabla", f"Tabla cargada correctamente desde:\n{filename}")
+
+        except Exception as e:
+            messagebox.showerror("Error al cargar", f"No se pudo cargar la tabla:\n{e}")
 
 
     # ------------------------------------------------------------
@@ -465,7 +640,10 @@ class DinamicasTotalesView(ttk.Frame):
         self.btn_delete.config(state="normal")
         self.btn_expand_total.config(state="normal")
         self.btn_reduce_total.config(state="normal")
-
+        # 🔹 habilitar guardar / guardar y cerrar
+        self.btn_save.config(state="normal")
+        self.btn_save_close.config(state="normal")
+        
         self.label_log.config(text="Tabla inicializada correctamente.")
 
     def _on_insert(self) -> None:
