@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from typing import Dict, Set, List, Tuple
 import math
 import random
@@ -123,6 +123,19 @@ class ArbolesView(ttk.Frame):
 		scroll_resultados.pack(side=tk.RIGHT, fill=tk.Y)
 		self.txt_resultados.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 		self.txt_resultados.configure(state="disabled")
+		
+		# Panel de archivos
+		file_panel = ttk.Frame(self, style="Panel.TFrame", padding=6)
+		file_panel.pack(fill=tk.X, padx=8, pady=3)
+		
+		btn_save_close = ttk.Button(file_panel, text="Guardar y cerrar", command=self._on_save_and_close)
+		btn_save_close.pack(side=tk.LEFT, padx=4)
+		
+		btn_save = ttk.Button(file_panel, text="Guardar", command=self._on_save)
+		btn_save.pack(side=tk.LEFT, padx=4)
+		
+		btn_load = ttk.Button(file_panel, text="Cargar", command=self._on_load)
+		btn_load.pack(side=tk.LEFT, padx=4)
 		
 		# Botón volver
 		back = ttk.Button(self, text="← Volver", command=lambda: self.app.navigate("arboles_menu"))
@@ -792,3 +805,107 @@ class ArbolesView(ttk.Frame):
 		self.txt_resultados.delete("1.0", tk.END)
 		self.txt_resultados.insert(tk.END, "Genera el árbol para\nver resultados.")
 		self.txt_resultados.configure(state="disabled")
+	
+	# ==================== GUARDAR / CARGAR ====================
+	
+	def _serialize(self) -> str:
+		"""Serializa el grafo a texto"""
+		lines = ["# Grafo Árbol Generador"]
+		lines.append(f"vertices:{','.join(self.vertices)}")
+		
+		for letra, datos in self.aristas.items():
+			u, v, peso = datos['u'], datos['v'], datos['peso']
+			lines.append(f"arista:{letra},{u},{v},{peso}")
+		
+		return "\n".join(lines) + "\n"
+	
+	def _parse(self, content: str) -> bool:
+		"""Parsea el contenido de un archivo"""
+		self.vertices = []
+		self.aristas = {}
+		self.posiciones = {}
+		
+		try:
+			for line in content.splitlines():
+				line = line.strip()
+				if not line or line.startswith("#"):
+					continue
+				
+				if line.startswith("vertices:"):
+					verts = line.split(":", 1)[1]
+					if verts:
+						self.vertices = [v.strip() for v in verts.split(",") if v.strip()]
+				
+				elif line.startswith("arista:"):
+					parts = line.split(":", 1)[1].split(",")
+					if len(parts) >= 4:
+						letra = parts[0].strip()
+						u = parts[1].strip()
+						v = parts[2].strip()
+						peso = float(parts[3].strip())
+						self.aristas[letra] = {'u': u, 'v': v, 'peso': peso}
+			
+			return True
+		except Exception:
+			return False
+	
+	def _on_save(self) -> None:
+		"""Guarda el grafo"""
+		path = filedialog.asksaveasfilename(
+			title="Guardar grafo Árbol",
+			defaultextension=".txt",
+			filetypes=[("Texto", "*.txt"), ("Todos", "*.*")]
+		)
+		if not path:
+			return
+		try:
+			with open(path, "w", encoding="utf-8") as f:
+				f.write(self._serialize())
+			messagebox.showinfo("Éxito", "Grafo guardado correctamente")
+		except Exception as e:
+			messagebox.showerror("Error", f"No se pudo guardar: {e}")
+	
+	def _on_save_and_close(self) -> None:
+		"""Guarda y cierra"""
+		path = filedialog.asksaveasfilename(
+			title="Guardar grafo Árbol",
+			defaultextension=".txt",
+			filetypes=[("Texto", "*.txt"), ("Todos", "*.*")]
+		)
+		if not path:
+			return
+		try:
+			with open(path, "w", encoding="utf-8") as f:
+				f.write(self._serialize())
+			messagebox.showinfo("Éxito", "Grafo guardado correctamente")
+			self.app.navigate("arboles_menu")
+		except Exception as e:
+			messagebox.showerror("Error", f"No se pudo guardar: {e}")
+	
+	def _on_load(self) -> None:
+		"""Carga un grafo"""
+		path = filedialog.askopenfilename(
+			title="Cargar grafo Árbol",
+			filetypes=[("Texto", "*.txt"), ("Todos", "*.*")]
+		)
+		if not path:
+			return
+		try:
+			with open(path, "r", encoding="utf-8") as f:
+				content = f.read()
+		except Exception as e:
+			messagebox.showerror("Error", f"No se pudo leer: {e}")
+			return
+		
+		if not self._parse(content):
+			messagebox.showerror("Error", "Formato de archivo inválido")
+			return
+		
+		# Limpiar resultados anteriores
+		self.mst_aristas = set()
+		self.cuerdas = set()
+		self.btn_ver_graficos.configure(state="disabled")
+		self._limpiar_resultados()
+		
+		self._draw_grafo()
+		self.status.configure(text=f"Cargado: {len(self.vertices)} vértices, {len(self.aristas)} aristas")

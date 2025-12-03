@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from typing import Dict, Set, Tuple, Optional, List
 import math
 import random
@@ -138,6 +138,19 @@ class GrafoBinarioView(ttk.Frame):
 		
 		self.canvas_resultado = tk.Canvas(right_panel, background="#ffffff")
 		self.canvas_resultado.pack(fill=tk.BOTH, expand=True)
+		
+		# Panel de archivos
+		file_panel = ttk.Frame(self, style="Panel.TFrame", padding=4)
+		file_panel.pack(fill=tk.X, padx=5, pady=2)
+		
+		btn_save_close = ttk.Button(file_panel, text="Guardar y cerrar", command=self._on_save_and_close)
+		btn_save_close.pack(side=tk.LEFT, padx=4)
+		
+		btn_save = ttk.Button(file_panel, text="Guardar", command=self._on_save)
+		btn_save.pack(side=tk.LEFT, padx=4)
+		
+		btn_load = ttk.Button(file_panel, text="Cargar", command=self._on_load)
+		btn_load.pack(side=tk.LEFT, padx=4)
 		
 		# Botón volver
 		back = ttk.Button(self, text="← Volver", command=lambda: self.app.navigate("grafos"))
@@ -920,3 +933,131 @@ class GrafoBinarioView(ttk.Frame):
 		px, py = -dy / length, dx / length
 		cx, cy = mid_x + px * curv, mid_y + py * curv
 		self.canvas_resultado.create_line(x1, y1, cx, cy, x2, y2, fill=color, width=2, smooth=True)
+	
+	# ==================== GUARDAR / CARGAR ====================
+	
+	def _serialize(self) -> str:
+		"""Serializa todos los grafos a texto"""
+		lines = ["# Grafos Operaciones"]
+		lines.append(f"num_grafos:{len(self.grafos)}")
+		
+		for idx, grafo in enumerate(self.grafos):
+			lines.append(f"grafo:{idx}")
+			lines.append(f"nombre:{grafo['nombre']}")
+			lines.append(f"vertices:{','.join(sorted(grafo['vertices']))}")
+			
+			for letra, datos in grafo['aristas'].items():
+				u, v = datos['u'], datos['v']
+				lines.append(f"arista:{letra},{u},{v}")
+		
+		return "\n".join(lines) + "\n"
+	
+	def _parse(self, content: str) -> bool:
+		"""Parsea el contenido de un archivo"""
+		self.grafos = []
+		self.grafo_seleccionado = -1
+		self.grafos_para_operar = []
+		current_grafo = None
+		
+		try:
+			for line in content.splitlines():
+				line = line.strip()
+				if not line or line.startswith("#"):
+					continue
+				
+				if line.startswith("num_grafos:"):
+					continue
+				
+				elif line.startswith("grafo:"):
+					if current_grafo is not None:
+						self.grafos.append(current_grafo)
+					current_grafo = {
+						'vertices': set(),
+						'aristas': {},
+						'posiciones': {},
+						'nombre': ''
+					}
+				
+				elif line.startswith("nombre:") and current_grafo is not None:
+					current_grafo['nombre'] = line.split(":", 1)[1].strip()
+				
+				elif line.startswith("vertices:") and current_grafo is not None:
+					verts = line.split(":", 1)[1]
+					if verts:
+						current_grafo['vertices'] = set(v.strip() for v in verts.split(",") if v.strip())
+				
+				elif line.startswith("arista:") and current_grafo is not None:
+					parts = line.split(":", 1)[1].split(",")
+					if len(parts) >= 3:
+						letra = parts[0].strip()
+						u = parts[1].strip()
+						v = parts[2].strip()
+						current_grafo['aristas'][letra] = {'u': u, 'v': v}
+			
+			if current_grafo is not None:
+				self.grafos.append(current_grafo)
+			
+			return len(self.grafos) > 0
+		except Exception:
+			return False
+	
+	def _on_save(self) -> None:
+		"""Guarda los grafos"""
+		path = filedialog.asksaveasfilename(
+			title="Guardar grafos",
+			defaultextension=".txt",
+			filetypes=[("Texto", "*.txt"), ("Todos", "*.*")]
+		)
+		if not path:
+			return
+		try:
+			with open(path, "w", encoding="utf-8") as f:
+				f.write(self._serialize())
+			messagebox.showinfo("Éxito", "Grafos guardados correctamente")
+		except Exception as e:
+			messagebox.showerror("Error", f"No se pudo guardar: {e}")
+	
+	def _on_save_and_close(self) -> None:
+		"""Guarda y cierra"""
+		path = filedialog.asksaveasfilename(
+			title="Guardar grafos",
+			defaultextension=".txt",
+			filetypes=[("Texto", "*.txt"), ("Todos", "*.*")]
+		)
+		if not path:
+			return
+		try:
+			with open(path, "w", encoding="utf-8") as f:
+				f.write(self._serialize())
+			messagebox.showinfo("Éxito", "Grafos guardados correctamente")
+			self.app.navigate("grafos")
+		except Exception as e:
+			messagebox.showerror("Error", f"No se pudo guardar: {e}")
+	
+	def _on_load(self) -> None:
+		"""Carga grafos"""
+		path = filedialog.askopenfilename(
+			title="Cargar grafos",
+			filetypes=[("Texto", "*.txt"), ("Todos", "*.*")]
+		)
+		if not path:
+			return
+		try:
+			with open(path, "r", encoding="utf-8") as f:
+				content = f.read()
+		except Exception as e:
+			messagebox.showerror("Error", f"No se pudo leer: {e}")
+			return
+		
+		if not self._parse(content):
+			messagebox.showerror("Error", "Formato de archivo inválido")
+			return
+		
+		# Limpiar resultado
+		self.vertices_resultado = set()
+		self.aristas_resultado = {}
+		self.posiciones_resultado = {}
+		self.canvas_resultado.delete("all")
+		
+		self._actualizar_grid_grafos()
+		self.status.configure(text=f"Cargados {len(self.grafos)} grafos")
