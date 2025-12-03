@@ -39,7 +39,7 @@ class HashView(ttk.Frame):
 		self.probe_mode = tk.StringVar(value="lineal")
 		probe_combo = ttk.Combobox(
 			params, 
-			values=["lineal", "cuadratica", "doble_hash", "arreglo_anidado", "lista_enlazada"], 
+			values=["lineal", "cuadrática", "doble hash", "arreglo anidado", "lista enlazada"], 
 			state="readonly", 
 			textvariable=self.probe_mode, 
 			width=14
@@ -134,6 +134,26 @@ class HashView(ttk.Frame):
 	def _on_probe_change(self, event=None) -> None:
 		"""Reinicia la tabla cuando cambia el método de resolución"""
 		self._on_init()
+	
+	def _configure_columns(self) -> None:
+		"""Configura las columnas según el modo de resolución"""
+		mode = self.probe_mode.get()
+		
+		if mode == "arreglo anidado":
+			self.tree.heading("anidado", text="Arreglo Anidado")
+			self.tree.column("anidado", width=200)
+			self.tree.heading("valor", text="Clave")
+			self.tree.column("valor", width=120)
+		elif mode == "lista enlazada":
+			self.tree.heading("anidado", text="")
+			self.tree.column("anidado", width=0)
+			self.tree.heading("valor", text="Lista Enlazada")
+			self.tree.column("valor", width=300)
+		else:
+			self.tree.heading("anidado", text="")
+			self.tree.column("anidado", width=0)
+			self.tree.heading("valor", text="Clave")
+			self.tree.column("valor", width=120)
 
 	def _read_params(self) -> tuple:
 		try:
@@ -164,10 +184,18 @@ class HashView(ttk.Frame):
 			return center % table_size
 			
 		elif mode == "plegamiento":
-			# Plegamiento: divide en partes de tamaño n, multiplica, toma primeros n dígitos
+			# Plegamiento: H(K) = dig_men_sig(K) + 1
+			# El tamaño de parte depende de los dígitos de N (cantidad de ceros)
+			# n=10 → 1 dígito → partes de 1: 1035 → 1*0*3*5
+			# n=100 → 2 dígitos → partes de 2: 1035 → 10*35
 			k_str = str(k)
-			# Determinar tamaño de cada parte (usamos 2 como tamaño de parte por defecto)
-			part_size = 2
+			
+			# Calcular tamaño de parte según dígitos de table_size
+			part_size = len(str(table_size)) - 1  # n=10→1, n=100→2, n=1000→3
+			if part_size < 1:
+				part_size = 1
+			
+			# Dividir en partes y multiplicar
 			parts = []
 			for i in range(0, len(k_str), part_size):
 				part = k_str[i:i + part_size]
@@ -184,7 +212,7 @@ class HashView(ttk.Frame):
 				for p in parts:
 					result *= p
 			
-			# Tomar primeros dígitos según tamaño de parte
+			# Tomar primeros dígitos (según part_size) de izquierda a derecha + 1
 			result_str = str(result)
 			if len(result_str) >= part_size:
 				direccion = int(result_str[:part_size])
@@ -194,11 +222,21 @@ class HashView(ttk.Frame):
 			return (direccion + 1) % table_size
 			
 		elif mode == "truncamiento":
-			# Truncamiento: elige dígito 1 y 3 (posiciones 0 y 2) + 1
+			# Truncamiento: H(K) = elegir_dig(d1, d2, ...) + 1
+			# Cantidad de dígitos a elegir depende de N
+			# n=10 → 1 dígito → elegir d1
+			# n=100 → 2 dígitos → elegir d1, d2
 			k_str = str(k).zfill(d)
-			d1 = k_str[0] if len(k_str) > 0 else '0'
-			d3 = k_str[2] if len(k_str) > 2 else '0'
-			direccion = int(d1 + d3)
+			
+			# Calcular cuántos dígitos elegir según table_size
+			num_digits = len(str(table_size)) - 1  # n=10→1, n=100→2, n=1000→3
+			if num_digits < 1:
+				num_digits = 1
+			
+			# Elegir los primeros num_digits dígitos
+			selected = k_str[:num_digits] if len(k_str) >= num_digits else k_str
+			direccion = int(selected) if selected else 0
+			
 			return (direccion + 1) % table_size
 		
 		return k % table_size
@@ -216,11 +254,11 @@ class HashView(ttk.Frame):
 			# D, D+1, D+2, D+3...
 			for t in range(n):
 				yield (base + t) % n
-		elif mode == "cuadratica":
+		elif mode == "cuadrática":
 			# D, D+1², D+2², D+3²... (D+1, D+4, D+9...)
 			for t in range(n):
 				yield (base + t * t) % n
-		elif mode == "doble_hash":
+		elif mode == "doble hash":
 			# Aplica doble hash a la dirección colisionada
 			current = base
 			visited = set()
@@ -243,16 +281,17 @@ class HashView(ttk.Frame):
 	def _on_init(self) -> None:
 		n, _ = self._read_params()
 		mode = self.probe_mode.get()
+		self._configure_columns()
 		
-		if mode in ["lineal", "cuadratica", "doble_hash"]:
+		if mode in ["lineal", "cuadrática", "doble hash"]:
 			self._table = [None] * n
 			self._table_anidado = []
 			self._table_enlazada = []
-		elif mode == "arreglo_anidado":
+		elif mode == "arreglo anidado":
 			self._table = [None] * n
 			self._table_anidado = [[] for _ in range(n)]
 			self._table_enlazada = []
-		else:  # lista_enlazada
+		else:  # lista enlazada
 			self._table = []
 			self._table_anidado = []
 			self._table_enlazada = [[] for _ in range(n)]
@@ -268,11 +307,11 @@ class HashView(ttk.Frame):
 		
 		max_value = 10 ** d - 1
 		min_value = 10 ** (d - 1) if d > 1 else 0
-		target = max(1, n // 2)
+		target = n  # Llenar todas las direcciones
 		inserted = 0
 		seen = set()
 		attempts = 0
-		max_attempts = target * 20
+		max_attempts = target * 50
 		
 		mode = self.probe_mode.get()
 		
@@ -294,7 +333,7 @@ class HashView(ttk.Frame):
 		mode = self.probe_mode.get()
 		base = self._hash(k, n, d)
 		
-		if mode in ["lineal", "cuadratica", "doble_hash"]:
+		if mode in ["lineal", "cuadrática", "doble hash"]:
 			# Verificar duplicado
 			for idx in self._probe_indices(k, n, d):
 				if self._table[idx] is None:
@@ -314,7 +353,7 @@ class HashView(ttk.Frame):
 					return True
 			return False  # Tabla llena
 			
-		elif mode == "arreglo_anidado":
+		elif mode == "arreglo anidado":
 			# Verificar duplicado en posición base y anidados
 			if self._table[base] == k:
 				return False
@@ -333,7 +372,7 @@ class HashView(ttk.Frame):
 				self._table_anidado[base].append(k)
 			return True
 			
-		else:  # lista_enlazada
+		else:  # lista enlazada
 			# Verificar duplicado en la cadena
 			if k in self._table_enlazada[base]:
 				return False
@@ -357,7 +396,7 @@ class HashView(ttk.Frame):
 		mode = self.probe_mode.get()
 		
 		# Verificar capacidad para métodos de direccionamiento abierto
-		if mode in ["lineal", "cuadratica", "doble_hash"]:
+		if mode in ["lineal", "cuadrática", "doble hash"]:
 			if sum(1 for v in self._table if v is not None) >= n:
 				messagebox.showerror("Error", "Tabla llena")
 				return
@@ -379,7 +418,7 @@ class HashView(ttk.Frame):
 		mode = self.probe_mode.get()
 		base = self._hash(k, n, d)
 		
-		if mode in ["lineal", "cuadratica", "doble_hash"]:
+		if mode in ["lineal", "cuadrática", "doble hash"]:
 			for idx in self._probe_indices(k, n, d):
 				if self._table[idx] is None:
 					break
@@ -389,9 +428,10 @@ class HashView(ttk.Frame):
 				self.after(500)
 				if self._table[idx] == k:
 					self.status.configure(text=f"Encontrado {k} en dirección {idx}")
+					messagebox.showinfo("Búsqueda", f"Número encontrado en la dirección {idx}")
 					return
 					
-		elif mode == "arreglo_anidado":
+		elif mode == "arreglo anidado":
 			self._highlight = base
 			self._draw()
 			self.update_idletasks()
@@ -399,13 +439,15 @@ class HashView(ttk.Frame):
 			
 			if self._table[base] == k:
 				self.status.configure(text=f"Encontrado {k} en dirección {base}")
+				messagebox.showinfo("Búsqueda", f"Número encontrado en la dirección {base}")
 				return
 			if k in self._table_anidado[base]:
 				pos = self._table_anidado[base].index(k)
 				self.status.configure(text=f"Encontrado {k} en dirección {base}, colisión #{pos+1}")
+				messagebox.showinfo("Búsqueda", f"Número encontrado en la dirección {base}, colisión #{pos+1}")
 				return
 				
-		else:  # lista_enlazada
+		else:  # lista enlazada
 			self._highlight = base
 			self._draw()
 			self.update_idletasks()
@@ -414,6 +456,7 @@ class HashView(ttk.Frame):
 			if k in self._table_enlazada[base]:
 				pos = self._table_enlazada[base].index(k)
 				self.status.configure(text=f"Encontrado {k} en dirección {base}, posición {pos}")
+				messagebox.showinfo("Búsqueda", f"Número encontrado en la dirección {base}, posición {pos}")
 				return
 		
 		self._highlight = None
@@ -431,7 +474,7 @@ class HashView(ttk.Frame):
 		mode = self.probe_mode.get()
 		base = self._hash(k, n, d)
 		
-		if mode in ["lineal", "cuadratica", "doble_hash"]:
+		if mode in ["lineal", "cuadrática", "doble hash"]:
 			for idx in self._probe_indices(k, n, d):
 				if self._table[idx] is None:
 					break
@@ -451,7 +494,7 @@ class HashView(ttk.Frame):
 					self._draw()
 					return
 					
-		elif mode == "arreglo_anidado":
+		elif mode == "arreglo anidado":
 			self._highlight = base
 			self._draw()
 			self.update_idletasks()
@@ -484,7 +527,7 @@ class HashView(ttk.Frame):
 				self._draw()
 				return
 				
-		else:  # lista_enlazada
+		else:  # lista enlazada
 			self._highlight = base
 			self._draw()
 			self.update_idletasks()
@@ -512,21 +555,6 @@ class HashView(ttk.Frame):
 		n, d = self._read_params()
 		mode = self.probe_mode.get()
 		
-		# Configurar columnas según el modo
-		if mode == "arreglo_anidado":
-			self.tree.heading("anidado", text="Arreglo Anidado")
-			self.tree.column("anidado", width=200)
-		elif mode == "lista_enlazada":
-			self.tree.heading("anidado", text="")
-			self.tree.column("anidado", width=0)
-			self.tree.heading("valor", text="Clave")
-			self.tree.column("valor", width=300)
-		else:
-			self.tree.heading("anidado", text="")
-			self.tree.column("anidado", width=0)
-			self.tree.heading("valor", text="Clave")
-			self.tree.column("valor", width=120)
-		
 		for idx in range(n):
 			if self._delete_index == idx:
 				tags = ("delete",)
@@ -535,7 +563,7 @@ class HashView(ttk.Frame):
 			else:
 				tags = ("normal",)
 			
-			if mode in ["lineal", "cuadratica", "doble_hash"]:
+			if mode in ["lineal", "cuadrática", "doble hash"]:
 				# Asegurar que la tabla tiene el tamaño correcto
 				if len(self._table) <= idx:
 					self._table.extend([None] * (idx + 1 - len(self._table)))
@@ -543,7 +571,7 @@ class HashView(ttk.Frame):
 				val_str = "-" if val is None else str(val).zfill(d)
 				self.tree.insert("", "end", values=(idx, val_str, ""), tags=tags)
 				
-			elif mode == "arreglo_anidado":
+			elif mode == "arreglo anidado":
 				if len(self._table) <= idx:
 					self._table.extend([None] * (idx + 1 - len(self._table)))
 				if len(self._table_anidado) <= idx:
@@ -558,7 +586,7 @@ class HashView(ttk.Frame):
 				
 				self.tree.insert("", "end", values=(idx, val_str, anidado_str), tags=tags)
 				
-			else:  # lista_enlazada
+			else:  # lista enlazada
 				if len(self._table_enlazada) <= idx:
 					self._table_enlazada.extend([[] for _ in range(idx + 1 - len(self._table_enlazada))])
 				
@@ -582,16 +610,16 @@ class HashView(ttk.Frame):
 			f"probe:{mode}"
 		]
 		
-		if mode in ["lineal", "cuadratica", "doble_hash"]:
+		if mode in ["lineal", "cuadrática", "doble hash"]:
 			vals = ["" if v is None else str(v) for v in self._table[:n]]
 			lines.append(f"table:{','.join(vals)}")
-		elif mode == "arreglo_anidado":
+		elif mode == "arreglo anidado":
 			vals = ["" if v is None else str(v) for v in self._table[:n]]
 			lines.append(f"table:{','.join(vals)}")
 			for i, arr in enumerate(self._table_anidado[:n]):
 				if arr:
 					lines.append(f"anidado_{i}:{','.join(str(x) for x in arr)}")
-		else:  # lista_enlazada
+		else:  # lista enlazada
 			for i, cadena in enumerate(self._table_enlazada[:n]):
 				if cadena:
 					lines.append(f"lista_{i}:{','.join(str(x) for x in cadena)}")
@@ -678,17 +706,17 @@ class HashView(ttk.Frame):
 		self.entry_digits.delete(0, tk.END)
 		self.entry_digits.insert(0, str(d))
 		self.hash_mode.set(hash_mode if hash_mode in ("modulo", "cuadrado", "plegamiento", "truncamiento") else "modulo")
-		self.probe_mode.set(probe_mode if probe_mode in ("lineal", "cuadratica", "doble_hash", "arreglo_anidado", "lista_enlazada") else "lineal")
+		self.probe_mode.set(probe_mode if probe_mode in ("lineal", "cuadrática", "doble hash", "arreglo anidado", "lista enlazada") else "lineal")
 		
-		if probe_mode in ["lineal", "cuadratica", "doble_hash"]:
+		if probe_mode in ["lineal", "cuadrática", "doble hash"]:
 			self._table = table + [None] * (n - len(table))
 			self._table_anidado = []
 			self._table_enlazada = []
-		elif probe_mode == "arreglo_anidado":
+		elif probe_mode == "arreglo anidado":
 			self._table = table + [None] * (n - len(table))
 			self._table_anidado = [anidados.get(i, []) for i in range(n)]
 			self._table_enlazada = []
-		else:  # lista_enlazada
+		else:  # lista enlazada
 			self._table = []
 			self._table_anidado = []
 			self._table_enlazada = [listas.get(i, []) for i in range(n)]

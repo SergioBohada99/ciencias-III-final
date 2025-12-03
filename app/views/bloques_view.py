@@ -341,7 +341,7 @@ class BloquesView(ttk.Frame):
 		self._draw()
 
 	def _on_delete(self) -> None:
-		"""Elimina un registro y reorganiza los elementos hacia atrás"""
+		"""Elimina un registro con animación de búsqueda lineal"""
 		_, _, digits = self._read_params()
 		key_str = self.entry_key.get().strip()
 		key = self._validate_key(key_str, digits)
@@ -350,32 +350,168 @@ class BloquesView(ttk.Frame):
 		
 		self._save_state()
 		
-		# Buscar y eliminar la clave
-		found = False
-		for block_idx, block in enumerate(self.blocks):
-			if key in block:
-				block.remove(key)
-				found = True
-				self.status.configure(text=f"Eliminado registro {key} del bloque {block_idx}")
-				
-				# Reorganizar elementos hacia atrás para llenar espacios vacíos
-				# Recopilar todos los elementos restantes
-				all_elements = []
-				for b in self.blocks:
-					all_elements.extend(b)
-				
-				# Reorganizar en bloques manteniendo el orden
-				self.blocks = [[] for _ in range(self.b)]
-				for i, num in enumerate(all_elements):
-					block_idx_new = min(i // self.block_size, self.b - 1)
-					self.blocks[block_idx_new].append(num)
-				
-				self.entry_key.delete(0, tk.END)
-				self._draw()
-				return
+		# Preparar animación de búsqueda lineal para eliminar
+		self._anim_steps = []
+		self._highlight_block = None
+		self._highlight_position = None
+		self._delete_key = key  # Guardar la clave a eliminar
+		self._delete_mode = True  # Indicar modo eliminación
 		
-		if not found:
-			messagebox.showinfo("Búsqueda", "Registro no encontrado")
+		self._search_sequential_blocks_for_delete(key)
+		
+		self._prepare_animation()
+		if self._anim_steps:
+			self._anim_index = 0
+			self._anim_running = True
+			self._anim_step_delete()
+	
+	def _search_sequential_blocks_for_delete(self, key: int) -> None:
+		"""Búsqueda secuencial entre bloques para eliminar"""
+		self._anim_steps.append({
+			'type': 'start',
+			'message': f'Buscando registro {key} para eliminar...',
+			'highlight_block': None,
+			'highlight_position': None
+		})
+		
+		for block_idx in range(len(self.blocks)):
+			if not self.blocks[block_idx]:
+				continue
+			
+			self._anim_steps.append({
+				'type': 'check_block',
+				'message': f'Evaluando bloque {block_idx + 1}',
+				'highlight_block': block_idx,
+				'highlight_position': None
+			})
+			
+			last_element = self.blocks[block_idx][-1]
+			
+			self._anim_steps.append({
+				'type': 'compare',
+				'message': f'¿{key} ≤ {last_element}? (último elemento del bloque {block_idx + 1})',
+				'highlight_block': block_idx,
+				'highlight_position': len(self.blocks[block_idx]) - 1,
+				'comparing': True
+			})
+			
+			if key <= last_element:
+				self._anim_steps.append({
+					'type': 'decision',
+					'message': f'Sí, {key} ≤ {last_element}. Buscar en este bloque',
+					'highlight_block': block_idx,
+					'highlight_position': len(self.blocks[block_idx]) - 1
+				})
+				self._search_within_block_for_delete(block_idx, key)
+				return
+			else:
+				self._anim_steps.append({
+					'type': 'decision',
+					'message': f'No, {key} > {last_element}. Continuar con siguiente bloque',
+					'highlight_block': block_idx,
+					'highlight_position': len(self.blocks[block_idx]) - 1
+				})
+		
+		self._anim_steps.append({
+			'type': 'not_found',
+			'message': 'Registro no encontrado',
+			'highlight_block': None,
+			'highlight_position': None
+		})
+	
+	def _search_within_block_for_delete(self, block_idx: int, key: int) -> None:
+		"""Búsqueda lineal dentro del bloque para eliminar"""
+		self._anim_steps.append({
+			'type': 'block_search_start',
+			'message': f'Buscando en bloque {block_idx + 1}...',
+			'highlight_block': block_idx,
+			'highlight_position': None
+		})
+		
+		block = self.blocks[block_idx]
+		for pos, value in enumerate(block):
+			self._anim_steps.append({
+				'type': 'linear_check',
+				'message': f'Comparando {key} con {value} en posición {pos}',
+				'highlight_block': block_idx,
+				'highlight_position': pos,
+				'comparing': True
+			})
+			
+			if value == key:
+				self._anim_steps.append({
+					'type': 'found_delete',
+					'message': f'¡Encontrado! Eliminando {key} del bloque {block_idx + 1}',
+					'highlight_block': block_idx,
+					'highlight_position': pos,
+					'delete_block': block_idx,
+					'delete_pos': pos
+				})
+				return
+			elif value > key:
+				break
+		
+		self._anim_steps.append({
+			'type': 'not_found',
+			'message': f'Registro {key} no encontrado',
+			'highlight_block': block_idx,
+			'highlight_position': None
+		})
+	
+	def _anim_step_delete(self) -> None:
+		"""Ejecuta un paso de la animación de eliminación"""
+		if self._anim_index >= len(self._anim_steps):
+			self._anim_running = False
+			self._delete_mode = False
+			if self._anim_steps:
+				last_step = self._anim_steps[-1]
+				if last_step['type'] == 'not_found':
+					messagebox.showwarning("⚠️ No Encontrado", "El registro NO se encuentra en la estructura")
+			return
+		
+		step = self._anim_steps[self._anim_index]
+		self._highlight_block = step.get('highlight_block')
+		self._highlight_position = step.get('highlight_position')
+		
+		self.status.configure(text=step['message'])
+		self._draw()
+		
+		self._anim_index += 1
+		
+		# Si encontramos el elemento para eliminar
+		if step['type'] == 'found_delete':
+			self.after(800, self._perform_delete, step['delete_block'], step['delete_pos'])
+			return
+		
+		if self._anim_running:
+			# Siempre llamar una vez más para mostrar el mensaje final
+			self.after(800, self._anim_step_delete)
+	
+	def _perform_delete(self, block_idx: int, pos: int) -> None:
+		"""Realiza la eliminación después de la animación"""
+		key = self._delete_key
+		
+		# Eliminar el elemento
+		if block_idx < len(self.blocks) and pos < len(self.blocks[block_idx]):
+			self.blocks[block_idx].pop(pos)
+		
+		# Reorganizar elementos
+		all_elements = []
+		for b in self.blocks:
+			all_elements.extend(b)
+		
+		self.blocks = [[] for _ in range(self.b)]
+		for i, num in enumerate(all_elements):
+			block_idx_new = min(i // self.block_size, self.b - 1)
+			self.blocks[block_idx_new].append(num)
+		
+		self._highlight_block = None
+		self._highlight_position = None
+		self._delete_mode = False
+		self.status.configure(text=f"Eliminado registro {key}")
+		self.entry_key.delete(0, tk.END)
+		self._draw()
+		messagebox.showwarning("✅ ¡ELIMINADO!", f"Registro {key} eliminado correctamente\n\n🗑️ La estructura ha sido reorganizada")
 
 	def _on_search(self) -> None:
 		"""Realiza búsqueda por bloques"""
@@ -641,9 +777,15 @@ class BloquesView(ttk.Frame):
 		if self._anim_index >= len(self._anim_steps):
 			self._anim_running = False
 			self.status.configure(text="Animación terminada")
-			# Verificar si necesitamos mostrar mensaje de "no encontrado"
-			if self._anim_steps and self._anim_steps[-1]['type'] == 'not_found':
-				messagebox.showinfo("Búsqueda", "Registro no encontrado")
+			# Verificar si necesitamos mostrar mensaje
+			if self._anim_steps:
+				last_step = self._anim_steps[-1]
+				if last_step['type'] == 'not_found':
+					messagebox.showwarning("⚠️ No Encontrado", "El registro NO se encuentra en la estructura")
+				elif last_step['type'] == 'found':
+					block_idx = last_step.get('highlight_block', 0)
+					pos = last_step.get('highlight_position', 0)
+					messagebox.showwarning("✅ ¡ENCONTRADO!", f"Registro encontrado en:\n\n   📦 Bloque: {block_idx + 1}\n   📍 Posición: {pos}")
 			return
 		
 		step = self._anim_steps[self._anim_index]
@@ -654,8 +796,9 @@ class BloquesView(ttk.Frame):
 		self._draw()  # Redibujar para mostrar los cambios de resaltado
 		
 		self._anim_index += 1
-		if self._anim_running and self._anim_index < len(self._anim_steps):
-			self.after(1200, self._anim_step)  # Un poco más lento para ver mejor
+		if self._anim_running:
+			# Siempre llamar una vez más para mostrar el mensaje final
+			self.after(1000, self._anim_step)
 
 	def _on_play(self) -> None:
 		"""Reproduce la animación"""

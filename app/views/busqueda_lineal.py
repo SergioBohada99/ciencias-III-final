@@ -246,6 +246,7 @@ class BusquedaLinealView(ttk.Frame):
 			self.after(700)
 			self.update_idletasks()
 			if value == target:
+				messagebox.showinfo("Búsqueda", f"Número encontrado en la dirección {idx}")
 				return
 		self._selected_index = None
 		self._draw()

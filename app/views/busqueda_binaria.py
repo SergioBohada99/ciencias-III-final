@@ -366,6 +366,7 @@ class BusquedaBinariaView(ttk.Frame):
 
 			if self._array[mid] == value:
 				self.status.configure(text=f"Encontrado {value} en dirección {mid}")
+				messagebox.showinfo("Búsqueda", f"Número encontrado en la dirección {mid}")
 				return
 			elif self._array[mid] < value:
 				lo = mid + 1
