@@ -1,0 +1,3 @@
+# Grafo Unario
+vertices:A,B
+arista:1,A,B

@@ -1,0 +1,8 @@
+# Grafo Unario
+vertices:A,C,B
+arista:1,A,C,B
+arista:2,C,B,C,B
+pos:A,121.86,741.96
+pos:C,B,853.41,375.11
+conteo:1,0
+conteo:2,0

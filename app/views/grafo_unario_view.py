@@ -24,23 +24,23 @@ class GrafoUnarioView(ttk.Frame):
 		lbl_add = ttk.Label(left_panel, text="Agregar Elementos", font=("MS Sans Serif", 10, "bold"))
 		lbl_add.grid(row=0, column=0, columnspan=2, pady=(0, 5), sticky="w")
 		
-		ttk.Label(left_panel, text="Vértice:").grid(row=1, column=0, sticky="w", pady=2)
+		ttk.Label(left_panel, text="Vértice (letra):").grid(row=1, column=0, sticky="w", pady=2)
 		self.entry_vertice = ttk.Entry(left_panel, width=15)
 		self.entry_vertice.grid(row=1, column=1, pady=2)
 		
 		btn_add_vertice = ttk.Button(left_panel, text="Agregar vértice", command=self._on_agregar_vertice, style="Retro.TButton")
 		btn_add_vertice.grid(row=2, column=0, columnspan=2, pady=2, sticky="ew")
 		
-		ttk.Label(left_panel, text="Letra arista:").grid(row=3, column=0, sticky="w", pady=2)
-		self.entry_arista_letra = ttk.Entry(left_panel, width=15)
-		self.entry_arista_letra.grid(row=3, column=1, pady=2)
+		ttk.Label(left_panel, text="Nº arista:").grid(row=3, column=0, sticky="w", pady=2)
+		self.entry_arista_num = ttk.Entry(left_panel, width=15)
+		self.entry_arista_num.grid(row=3, column=1, pady=2)
 		
 		ttk.Label(left_panel, text="Arista (u,v):").grid(row=4, column=0, sticky="w", pady=2)
 		frame_arista = ttk.Frame(left_panel)
 		frame_arista.grid(row=4, column=1, pady=2)
 		self.entry_u = ttk.Entry(frame_arista, width=6)
 		self.entry_u.pack(side=tk.LEFT)
-		ttk.Label(frame_arista, text=",").pack(side=tk.LEFT, padx=2)
+		ttk.Label(frame_arista, text="-").pack(side=tk.LEFT, padx=2)
 		self.entry_v = ttk.Entry(frame_arista, width=6)
 		self.entry_v.pack(side=tk.LEFT)
 		
@@ -126,25 +126,25 @@ class GrafoUnarioView(ttk.Frame):
 		self.app = app
 		
 		# Estructuras de datos
-		# Vértices: Set de strings (números como "1", "2", "3", etc. o combinados "1,2")
+		# Vértices: Set de strings (letras como "A", "B", "C", etc. o combinados "A,B")
 		self.vertices: Set[str] = set()
-		# Aristas: Dict con letra como key, valor es {'u': str, 'v': str}
+		# Aristas: Dict con número como key (puede tener primas: "1", "1'", "1''"), valor es {'u': str, 'v': str}
 		self.aristas: Dict[str, Dict[str, str]] = {}
 		self.posiciones: Dict[str, Tuple[float, float]] = {}
+		# Contador para generar primas en aristas repetidas
+		self.conteo_aristas: Dict[str, int] = {}  # {"1": 2} significa que hay 1 y 1'
 	
 	def _on_agregar_vertice(self) -> None:
 		"""Agrega un vértice al grafo"""
-		vertice = self.entry_vertice.get().strip()
+		vertice = self.entry_vertice.get().strip().upper()
 		
 		if not vertice:
-			messagebox.showerror("Error", "Ingresa un número para el vértice")
+			messagebox.showerror("Error", "Ingresa una letra para el vértice")
 			return
 		
-		# Validar que sea un número (no permitir nombres combinados aquí, solo números simples)
-		try:
-			int(vertice)  # Validar que sea convertible a número
-		except ValueError:
-			messagebox.showerror("Error", "El vértice debe ser un número simple")
+		# Validar que sea solo letras
+		if not vertice.isalpha():
+			messagebox.showerror("Error", "El vértice debe ser solo letras (ej: A, B, C)")
 			return
 		
 		if vertice in self.vertices:
@@ -156,51 +156,60 @@ class GrafoUnarioView(ttk.Frame):
 		self.entry_vertice.delete(0, tk.END)
 		self._draw()
 	
+	def _generar_nombre_arista(self, numero_base: str) -> str:
+		"""Genera el nombre de la arista con primas si se repite"""
+		if numero_base not in self.conteo_aristas:
+			self.conteo_aristas[numero_base] = 0
+			return numero_base
+		else:
+			count = self.conteo_aristas[numero_base]
+			self.conteo_aristas[numero_base] += 1
+			primas = "'" * (count + 1)
+			return f"{numero_base}{primas}"
+	
 	def _on_agregar_arista(self) -> None:
 		"""Agrega una arista al grafo"""
-		arista_letra = self.entry_arista_letra.get().strip()
-		u = self.entry_u.get().strip()
-		v = self.entry_v.get().strip()
+		arista_num = self.entry_arista_num.get().strip()
+		u = self.entry_u.get().strip().upper()
+		v = self.entry_v.get().strip().upper()
 		
-		if not arista_letra or not u or not v:
-			messagebox.showerror("Error", "Ingresa la letra de la arista y ambos vértices")
+		if not arista_num or not u or not v:
+			messagebox.showerror("Error", "Ingresa el número de la arista y ambos vértices")
 			return
 		
-		# Validar que la letra sea una letra única
-		if not arista_letra.isalpha():
-			messagebox.showerror("Error", "La arista debe ser una o más letras")
+		# Validar que sea un número
+		if not arista_num.isdigit():
+			messagebox.showerror("Error", "La arista debe ser un número (ej: 1, 2, 3)")
 			return
 		
-		# Validar que la letra no exista ya
-		if arista_letra in self.aristas:
-			messagebox.showwarning("Advertencia", f"La arista '{arista_letra}' ya existe")
-			return
-		
-		# Los vértices pueden ser números simples o combinados (ej: "1,2")
+		# Los vértices pueden ser letras simples o combinados (ej: "A,B")
 		# No validamos el formato, solo que existan
 		if u not in self.vertices or v not in self.vertices:
 			messagebox.showerror("Error", "Ambos vértices deben existir en el grafo")
 			return
 		
-		# Agregar arista (siempre no dirigida)
-		self.aristas[arista_letra] = {'u': u, 'v': v}
+		# Generar nombre de arista (con primas si se repite)
+		nombre_arista = self._generar_nombre_arista(arista_num)
 		
-		self.status.configure(text=f"Arista '{arista_letra}' agregada: {u} - {v}")
-		self.entry_arista_letra.delete(0, tk.END)
+		# Agregar arista (siempre no dirigida)
+		self.aristas[nombre_arista] = {'u': u, 'v': v}
+		
+		self.status.configure(text=f"Arista '{nombre_arista}' agregada: {u} - {v}")
+		self.entry_arista_num.delete(0, tk.END)
 		self.entry_u.delete(0, tk.END)
 		self.entry_v.delete(0, tk.END)
 		self._draw()
 	
 	def _on_fusionar_vertices(self) -> None:
 		"""Fusiona dos vértices en uno nuevo con nombre combinado"""
-		u = self.entry_fusion_u.get().strip()
-		v = self.entry_fusion_v.get().strip()
+		u = self.entry_fusion_u.get().strip().upper()
+		v = self.entry_fusion_v.get().strip().upper()
 		
 		if not u or not v:
 			messagebox.showerror("Error", "Ingresa ambos vértices a fusionar")
 			return
 		
-		# Los vértices pueden ser números simples o combinados
+		# Los vértices pueden ser letras simples o combinados
 		if u not in self.vertices or v not in self.vertices:
 			messagebox.showerror("Error", "Ambos vértices deben existir")
 			return
@@ -297,7 +306,7 @@ class GrafoUnarioView(ttk.Frame):
 	
 	def _on_eliminar_vertice(self) -> None:
 		"""Elimina un vértice y todas sus aristas incidentes"""
-		vertice = self.entry_eliminar_v.get().strip()
+		vertice = self.entry_eliminar_v.get().strip().upper()
 		
 		if not vertice:
 			messagebox.showerror("Error", "Ingresa un vértice")
@@ -347,6 +356,7 @@ class GrafoUnarioView(ttk.Frame):
 		self.vertices = set()
 		self.aristas = {}
 		self.posiciones = {}
+		self.conteo_aristas = {}
 		self.status.configure(text="Grafo limpiado")
 		self._draw()
 	
@@ -638,11 +648,20 @@ class GrafoUnarioView(ttk.Frame):
 	def _serialize(self) -> str:
 		"""Serializa el grafo a texto"""
 		lines = ["# Grafo Unario"]
-		lines.append(f"vertices:{','.join(self.vertices)}")
+		lines.append(f"vertices:{','.join(sorted(self.vertices))}")
 		
-		for letra, datos in self.aristas.items():
+		# Guardar aristas
+		for nombre, datos in self.aristas.items():
 			u, v = datos['u'], datos['v']
-			lines.append(f"arista:{letra},{u},{v}")
+			lines.append(f"arista:{nombre},{u},{v}")
+		
+		# Guardar posiciones
+		for vertice, (x, y) in self.posiciones.items():
+			lines.append(f"pos:{vertice},{x:.2f},{y:.2f}")
+		
+		# Guardar conteo de aristas para primas
+		for num_base, count in self.conteo_aristas.items():
+			lines.append(f"conteo:{num_base},{count}")
 		
 		return "\n".join(lines) + "\n"
 	
@@ -651,6 +670,7 @@ class GrafoUnarioView(ttk.Frame):
 		self.vertices = set()
 		self.aristas = {}
 		self.posiciones = {}
+		self.conteo_aristas = {}
 		
 		try:
 			for line in content.splitlines():
@@ -666,10 +686,25 @@ class GrafoUnarioView(ttk.Frame):
 				elif line.startswith("arista:"):
 					parts = line.split(":", 1)[1].split(",")
 					if len(parts) >= 3:
-						letra = parts[0].strip()
+						nombre = parts[0].strip()
 						u = parts[1].strip()
 						v = parts[2].strip()
-						self.aristas[letra] = {'u': u, 'v': v}
+						self.aristas[nombre] = {'u': u, 'v': v}
+				
+				elif line.startswith("pos:"):
+					parts = line.split(":", 1)[1].split(",")
+					if len(parts) >= 3:
+						vertice = parts[0].strip()
+						x = float(parts[1].strip())
+						y = float(parts[2].strip())
+						self.posiciones[vertice] = (x, y)
+				
+				elif line.startswith("conteo:"):
+					parts = line.split(":", 1)[1].split(",")
+					if len(parts) >= 2:
+						num_base = parts[0].strip()
+						count = int(parts[1].strip())
+						self.conteo_aristas[num_base] = count
 			
 			return True
 		except Exception:
