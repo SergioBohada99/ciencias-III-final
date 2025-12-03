@@ -1,0 +1,31 @@
+{
+  "params": {
+    "r": "30000",
+    "B": "1024",
+    "R": "100",
+    "v": "9",
+    "p": "6",
+    "index_type": "secondary",
+    "is_multilevel": true
+  },
+  "calc": {
+    "r": 30000,
+    "B": 1024.0,
+    "R": 100.0,
+    "v": 9.0,
+    "p": 6.0,
+    "bfr": 10,
+    "b": 3000,
+    "Ri": 15.0,
+    "bfri": 68,
+    "ri": 30000,
+    "bi": 442,
+    "index_type": "secondary",
+    "multilevel_blocks": [
+      442,
+      7,
+      1
+    ],
+    "is_multilevel": true
+  }
+}

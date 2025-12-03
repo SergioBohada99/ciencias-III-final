@@ -410,7 +410,7 @@ class DinamicasParcialesView(ttk.Frame):
         # Fila 2 - Expansión / Reducción forzada
         self.btn_expand_total = ttk.Button(
             self.frame_ops,
-            text="Expansión total",
+            text="Expansión parcial",
             command=self._on_force_expand,
             state="disabled",
         )
@@ -418,7 +418,7 @@ class DinamicasParcialesView(ttk.Frame):
 
         self.btn_reduce_total = ttk.Button(
             self.frame_ops,
-            text="Reducción total",
+            text="Reducción parcial",
             command=self._on_force_reduce,
             state="disabled",
         )
@@ -733,9 +733,10 @@ class DinamicasParcialesView(ttk.Frame):
             col = b_idx % cubetas_por_fila
 
             x0 = margin + col * (bucket_w + margin)
-            y0 = margin + fila * (cell_h * (tam + 1) + margin)
+            # algo de espacio vertical entre filas de cubetas
+            y0 = margin + fila * (cell_h * (tam + 1) + 2 * margin)
 
-            # Marco de cubeta
+            # Marco principal de la cubeta
             self.canvas.create_rectangle(
                 x0,
                 y0,
@@ -745,7 +746,7 @@ class DinamicasParcialesView(ttk.Frame):
                 width=1,
             )
 
-            # Header con índice
+            # Header con índice de cubeta
             self.canvas.create_rectangle(
                 x0,
                 y0,
@@ -761,7 +762,7 @@ class DinamicasParcialesView(ttk.Frame):
                 font=("TkDefaultFont", 9, "bold"),
             )
 
-            # Celdas
+            # Celdas principales de la cubeta
             bucket = ht.buckets[b_idx]
             for i in range(tam):
                 cy0 = y0 + cell_h * (i + 1)
@@ -783,3 +784,37 @@ class DinamicasParcialesView(ttk.Frame):
                         text=str(val),
                         font=("TkDefaultFont", 9),
                     )
+
+            # --- Dibujar OVERFLOW debajo de la cubeta ---
+            overflow_vals = ht.overflow[b_idx]
+            if overflow_vals:
+                base_y = y0 + cell_h * (tam + 1) + 4  # un poquito debajo de la cubeta
+
+                # Pequeño título "overflow"
+                self.canvas.create_text(
+                    x0 + bucket_w / 2,
+                    base_y,
+                    text="overflow",
+                    font=("TkDefaultFont", 7, "italic"),
+                    fill="#555555",
+                )
+
+                # Cada registro del overflow como un cuadro debajo
+                for j, val in enumerate(overflow_vals):
+                    oy0 = base_y + 2 + j * cell_h
+                    oy1 = oy0 + cell_h
+                    self.canvas.create_rectangle(
+                        x0,
+                        oy0,
+                        x0 + bucket_w,
+                        oy1,
+                        outline="#cc0000",
+                    )
+                    self.canvas.create_text(
+                        x0 + bucket_w / 2,
+                        (oy0 + oy1) / 2,
+                        text=str(val),
+                        font=("TkDefaultFont", 9),
+                        fill="#cc0000",
+                    )
+

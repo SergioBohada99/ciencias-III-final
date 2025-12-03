@@ -1,0 +1,59 @@
+{
+  "tipo": "totales",
+  "num_cubetas_inicial": 2,
+  "num_cubetas": 8,
+  "tam_cubeta": 2,
+  "densidad_objetivo": 0.75,
+  "buckets": [
+    [
+      8,
+      null
+    ],
+    [
+      null,
+      null
+    ],
+    [
+      10,
+      2
+    ],
+    [
+      3,
+      null
+    ],
+    [
+      4,
+      null
+    ],
+    [
+      5,
+      null
+    ],
+    [
+      null,
+      null
+    ],
+    [
+      null,
+      null
+    ]
+  ],
+  "overflow": [
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+  ],
+  "insertion_order": [
+    10,
+    5,
+    3,
+    4,
+    2,
+    8
+  ]
+}
