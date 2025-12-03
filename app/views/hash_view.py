@@ -15,7 +15,7 @@ class HashView(ttk.Frame):
 		params = ttk.Frame(self, style="Panel.TFrame", padding=10)
 		params.pack(fill=tk.X, padx=4, pady=6)
 
-		lbl_n = ttk.Label(params, text="Tamaño tabla (n):")
+		lbl_n = ttk.Label(params, text="Rango (n):")
 		lbl_n.grid(row=0, column=0, sticky="w", padx=(0, 6))
 		self.entry_n = ttk.Entry(params, width=8)
 		self.entry_n.insert(0, "10")

@@ -34,7 +34,7 @@ class FloydView(ttk.Frame):
 		title = ttk.Label(self, text="Algoritmo de Floyd", style="Title.TLabel")
 		title.pack(pady=(10, 3))
 		
-		desc = ttk.Label(self, text="Encuentra el camino más corto entre todos los pares de vértices")
+		desc = ttk.Label(self, text="Encuentra el camino más corto entre todos los pares de vértices (Grafo Dirigido)")
 		desc.pack(pady=2)
 		
 		# Panel principal
@@ -239,7 +239,7 @@ class FloydView(ttk.Frame):
 		letra = self._generar_letra_arista()
 		
 		self.aristas[letra] = {'u': u, 'v': v, 'peso': peso}
-		self.status.configure(text=f"Arista '{letra}': {u}↔{v} (w={peso})")
+		self.status.configure(text=f"Arista '{letra}': {u}→{v} (w={peso})")
 		
 		# Limpiar campos
 		self.entry_u.delete(0, tk.END)
@@ -421,17 +421,20 @@ class FloydView(ttk.Frame):
 		
 		self._calcular_posiciones()
 		
-		# Agrupar aristas por pares de vértices
+		# Agrupar aristas por pares ordenados (u, v) - grafo dirigido
 		aristas_por_par = {}
 		for arista_id, datos in self.aristas.items():
 			u, v = datos['u'], datos['v']
-			par = tuple(sorted([u, v]))
+			par = (u, v)  # No ordenar - mantener dirección
 			if par not in aristas_por_par:
 				aristas_por_par[par] = []
 			aristas_por_par[par].append((arista_id, datos))
 		
 		# Dibujar aristas
 		for par, aristas_grupo in aristas_por_par.items():
+			u_par, v_par = par
+			# Verificar si hay aristas en dirección contraria
+			hay_contraria = (v_par, u_par) in aristas_por_par
 			total_aristas = len(aristas_grupo)
 			
 			for idx, (arista_id, datos) in enumerate(aristas_grupo):
@@ -446,8 +449,9 @@ class FloydView(ttk.Frame):
 				
 				if u == v:
 					self._draw_loop(x1, y1, arista_id, peso, idx, total_aristas)
-				elif total_aristas > 1:
-					curvatura = (idx - (total_aristas - 1) / 2) * 25
+				elif total_aristas > 1 or hay_contraria:
+					# Curvar si hay múltiples o hay arista en dirección opuesta
+					curvatura = 20 if total_aristas == 1 else (idx - (total_aristas - 1) / 2) * 25
 					self._draw_curved_edge(x1, y1, x2, y2, arista_id, peso, curvatura)
 				else:
 					self._draw_straight_edge(x1, y1, x2, y2, arista_id, peso)
@@ -472,8 +476,22 @@ class FloydView(ttk.Frame):
 			)
 	
 	def _draw_straight_edge(self, x1: float, y1: float, x2: float, y2: float, arista_id: str, peso: float) -> None:
-		"""Dibuja una arista recta con peso"""
-		self.canvas.create_line(x1, y1, x2, y2, fill="#333333", width=2)
+		"""Dibuja una arista recta con peso y flecha (dirigida)"""
+		# Calcular punto final ajustado (para que la flecha no quede dentro del nodo)
+		dx = x2 - x1
+		dy = y2 - y1
+		length = math.sqrt(dx**2 + dy**2)
+		if length == 0:
+			return
+		
+		# Ajustar el punto final para que la flecha termine en el borde del nodo
+		node_radius = 18
+		ratio = (length - node_radius) / length
+		x2_adj = x1 + dx * ratio
+		y2_adj = y1 + dy * ratio
+		
+		# Dibujar línea con flecha
+		self.canvas.create_line(x1, y1, x2_adj, y2_adj, fill="#333333", width=2, arrow=tk.LAST, arrowshape=(10, 12, 5))
 		
 		mid_x = (x1 + x2) / 2
 		mid_y = (y1 + y2) / 2
@@ -494,7 +512,7 @@ class FloydView(ttk.Frame):
 		)
 	
 	def _draw_curved_edge(self, x1: float, y1: float, x2: float, y2: float, arista_id: str, peso: float, curvatura: float) -> None:
-		"""Dibuja una arista curva con peso"""
+		"""Dibuja una arista curva con peso y flecha (dirigida)"""
 		mid_x = (x1 + x2) / 2
 		mid_y = (y1 + y2) / 2
 		
@@ -510,9 +528,22 @@ class FloydView(ttk.Frame):
 		control_x = mid_x + perp_x * curvatura
 		control_y = mid_y + perp_y * curvatura
 		
+		# Ajustar punto final para la flecha
+		node_radius = 18
+		# Calcular dirección desde el punto de control al destino
+		dx_ctrl = x2 - control_x
+		dy_ctrl = y2 - control_y
+		len_ctrl = math.sqrt(dx_ctrl**2 + dy_ctrl**2)
+		if len_ctrl > 0:
+			x2_adj = x2 - (dx_ctrl / len_ctrl) * node_radius
+			y2_adj = y2 - (dy_ctrl / len_ctrl) * node_radius
+		else:
+			x2_adj, y2_adj = x2, y2
+		
+		# Dibujar curva
 		self.canvas.create_line(
-			x1, y1, control_x, control_y, x2, y2,
-			fill="#333333", width=2, smooth=True
+			x1, y1, control_x, control_y, x2_adj, y2_adj,
+			fill="#333333", width=2, smooth=True, arrow=tk.LAST, arrowshape=(10, 12, 5)
 		)
 		
 		peso_txt = f"{int(peso)}" if peso == int(peso) else f"{peso:.1f}"
@@ -529,7 +560,7 @@ class FloydView(ttk.Frame):
 		)
 	
 	def _draw_loop(self, x: float, y: float, arista_id: str, peso: float, idx: int, total: int) -> None:
-		"""Dibuja un bucle con peso"""
+		"""Dibuja un bucle con peso y flecha (dirigido)"""
 		radius = 18
 		loop_radius = 20
 		
@@ -543,10 +574,23 @@ class FloydView(ttk.Frame):
 		loop_x = x + distance * math.cos(angle_rad)
 		loop_y = y + distance * math.sin(angle_rad)
 		
+		# Dibujar bucle como arco con flecha
 		self.canvas.create_oval(
 			loop_x - loop_radius, loop_y - loop_radius,
 			loop_x + loop_radius, loop_y + loop_radius,
 			outline="#333333", width=2, fill=""
+		)
+		
+		# Dibujar flecha pequeña para indicar dirección (en sentido horario)
+		arrow_angle = angle_rad + math.pi / 2
+		arrow_x = loop_x + loop_radius * math.cos(arrow_angle + 0.3)
+		arrow_y = loop_y + loop_radius * math.sin(arrow_angle + 0.3)
+		arrow_dx = math.cos(arrow_angle + math.pi/2) * 6
+		arrow_dy = math.sin(arrow_angle + math.pi/2) * 6
+		self.canvas.create_line(
+			arrow_x - arrow_dx, arrow_y - arrow_dy,
+			arrow_x + arrow_dx, arrow_y + arrow_dy,
+			fill="#333333", width=2, arrow=tk.LAST, arrowshape=(6, 8, 4)
 		)
 		
 		peso_txt = f"{int(peso)}" if peso == int(peso) else f"{peso:.1f}"
@@ -594,12 +638,11 @@ class FloydView(ttk.Frame):
 		# Mapeo de vértices a índices
 		idx = {v: i for i, v in enumerate(self.vertices)}
 		
-		# Llenar con las aristas existentes (grafo no dirigido)
+		# Llenar con las aristas existentes (grafo dirigido)
 		for datos in self.aristas.values():
 			u, v, peso = datos['u'], datos['v'], datos['peso']
 			i, j = idx[u], idx[v]
 			D[i][j] = min(D[i][j], peso)
-			D[j][i] = min(D[j][i], peso)
 		
 		# Guardar matriz inicial (D^0)
 		self.matrices_intermedias = [(0, [row[:] for row in D])]

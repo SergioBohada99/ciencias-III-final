@@ -25,7 +25,7 @@ class ResiduosTreeView(ttk.Frame):
 	def __init__(self, parent: tk.Misc, app) -> None:
 		super().__init__(parent)
 
-		title = ttk.Label(self, text="Árbol por residuos (MSB→LSB)", style="Title.TLabel")
+		title = ttk.Label(self, text="Árbol por residuos", style="Title.TLabel")
 		title.pack(pady=(20, 5))
 
 		panel = ttk.Frame(self, padding=6)
