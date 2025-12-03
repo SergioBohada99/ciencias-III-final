@@ -349,7 +349,7 @@ class DinamicasParcialesView(ttk.Frame):
         )
 
         # === Configuración de la tabla ===
-        self.frame_config = ttk.LabelFrame(self, text="Configuración de la tabla", padding=10)
+        self.frame_config = ttk.LabelFrame(self, text="Configuración de la estructura", padding=10)
 
         ttk.Label(self.frame_config, text="Cubetas:").grid(
             row=0, column=0, sticky="e", padx=5, pady=5
@@ -371,7 +371,7 @@ class DinamicasParcialesView(ttk.Frame):
 
         self.btn_init = ttk.Button(
             self.frame_config,
-            text="Inicializar tabla",
+            text="Inicializar estructura",
             command=self._on_init_table,
         )
         self.btn_init.grid(row=0, column=6, padx=10)
@@ -460,7 +460,7 @@ class DinamicasParcialesView(ttk.Frame):
 
 
         # Estado / log
-        self.label_estado = ttk.Label(self, text="Tabla no inicializada.")
+        self.label_estado = ttk.Label(self, text="Estructura no inicializada.")
         self.label_log = ttk.Label(
             self,
             text="",

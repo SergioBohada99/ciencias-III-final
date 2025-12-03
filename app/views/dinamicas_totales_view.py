@@ -357,7 +357,7 @@ class DinamicasTotalesView(ttk.Frame):
         )
 
         # === Configuración de la tabla ===
-        self.frame_config = ttk.LabelFrame(self, text="Configuración de la tabla", padding=10)
+        self.frame_config = ttk.LabelFrame(self, text="Configuración de la estructura", padding=10)
 
         ttk.Label(self.frame_config, text="Cubetas:").grid(
             row=0, column=0, sticky="e", padx=5, pady=5
@@ -379,7 +379,7 @@ class DinamicasTotalesView(ttk.Frame):
 
         self.btn_init = ttk.Button(
             self.frame_config,
-            text="Inicializar tabla",
+            text="Inicializar estructura",
             command=self._on_init_table,
         )
         self.btn_init.grid(row=0, column=6, padx=10)
@@ -469,7 +469,7 @@ class DinamicasTotalesView(ttk.Frame):
         self.canvas.bind("<Configure>", lambda e: self._draw_table())
 
         # Estado / log
-        self.label_estado = ttk.Label(self, text="Tabla no inicializada.")
+        self.label_estado = ttk.Label(self, text="Estructura no inicializada.")
         self.label_log = ttk.Label(
             self,
             text="",
@@ -644,7 +644,7 @@ class DinamicasTotalesView(ttk.Frame):
         self.btn_save.config(state="normal")
         self.btn_save_close.config(state="normal")
         
-        self.label_log.config(text="Tabla inicializada correctamente.")
+        self.label_log.config(text="Estructura inicializada correctamente.")
 
     def _on_insert(self) -> None:
         if not self.hash_table:
@@ -700,7 +700,7 @@ class DinamicasTotalesView(ttk.Frame):
     # ------------------------------------------------------------
     def _update_estado(self) -> None:
         if not self.hash_table:
-            self.label_estado.config(text="Tabla no inicializada.")
+            self.label_estado.config(text="Estructura no inicializada.")
             return
 
         ht = self.hash_table

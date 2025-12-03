@@ -202,69 +202,85 @@ class TransformacionClavesView(ttk.Frame):
 
     def _hash(self, k: int, n: int, d: int) -> int:
         mode = self.hash_mode.get()
-        table_size, _ = self._read_params()
 
+        # -----------------------
+        # 1. MÓDULO
+        # -----------------------
         if mode == "modulo":
-            return k % table_size
+            pos = k % n
+            return (pos + 1) % n
 
+        # -----------------------
+        # 2. CUADRADO CENTRAL
+        # -----------------------
         elif mode == "cuadrado":
-            # Método del cuadrado central
             k2 = k * k
             k2_str = str(k2).zfill(2 * d)
+
             center_len = d
             start = max(0, (len(k2_str) - center_len) // 2)
             center = int(k2_str[start:start + center_len]) if k2_str[start:start + center_len] else 0
-            return center % table_size
 
+            pos = center % n
+            return (pos + 1) % n
+
+        # -----------------------
+        # 3. PLEGAMIENTO
+        # -----------------------
         elif mode == "plegamiento":
-            # Plegamiento en partes de 2 dígitos, se multiplican y se toman los primeros 2 dígitos
             k_str = str(k)
-            part_size = 2
-            parts = []
-            for i in range(0, len(k_str), part_size):
-                part = k_str[i:i + part_size]
-                if part:
-                    parts.append(int(part))
+            grupos = []
 
-            if not parts:
-                result = 0
-            elif len(parts) == 1:
-                result = parts[0]
-            else:
-                result = 1
-                for p in parts:
-                    result *= p
+            # Fragmentar en parejas de 2 dígitos
+            i = 0
+            while i < len(k_str):
+                if i + 2 <= len(k_str):
+                    grupos.append(int(k_str[i:i+2]))
+                    i += 2
+                else:
+                    grupos.append(int(k_str[i:]))
+                    i += 1
 
-            result_str = str(result)
-            if len(result_str) >= part_size:
-                direccion = int(result_str[:part_size])
-            else:
-                direccion = result
+            # Suma total
+            direccion = sum(grupos)
 
-            return (direccion + 1) % table_size
+            # 🔥 Sin % n — se devuelve la suma total + 1
+            return direccion + 1
 
+
+        # -----------------------
+        # 4. TRUNCAMIENTO
+        # -----------------------
         elif mode == "truncamiento":
-            # Truncamiento: usa el dígito 1 y 3 (posición 0 y 2)
             k_str = str(k).zfill(d)
             d1 = k_str[0] if len(k_str) > 0 else "0"
             d3 = k_str[2] if len(k_str) > 2 else "0"
             direccion = int(d1 + d3)
-            return (direccion + 1) % table_size
 
+            pos = (direccion + 1) % n
+            return pos
+
+        # -----------------------
+        # 5. CONVERSIÓN DE BASES
+        # -----------------------
         elif mode == "conversion_bases":
-            # Conversión de bases: convierte a base b y suma los dígitos
             base = self._read_base()
             valor = k
-            if valor == 0:
-                suma = 0
-            else:
-                suma = 0
-                while valor > 0:
-                    suma += valor % base
-                    valor //= base
-            return suma % table_size
+            suma = 0
 
-        return k % table_size
+            while valor > 0:
+                suma += valor % base
+                valor //= base
+
+            pos = suma % n
+            return (pos + 1) % n
+
+        # -----------------------
+        # DEFAULT
+        # -----------------------
+        pos = k % n
+        return (pos + 1) % n
+
 
     def _double_hash(self, d: int, n: int) -> int:
         """Doble hash: H(D) = (D + 1) mod n + 1"""
@@ -883,6 +899,7 @@ class TransformacionClavesView(ttk.Frame):
         )
         if not path:
             return
+
         try:
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -897,36 +914,59 @@ class TransformacionClavesView(ttk.Frame):
 
         n, d, hash_mode, probe_mode, base, table, anidados, listas = parsed
 
+        # --- Restaurar parámetros en la UI ---
         self.entry_n.delete(0, tk.END)
         self.entry_n.insert(0, str(n))
+
         self.entry_digits.delete(0, tk.END)
         self.entry_digits.insert(0, str(d))
+
         if base is not None:
             self.entry_base.delete(0, tk.END)
             self.entry_base.insert(0, str(base))
 
         self.hash_mode.set(
-            hash_mode if hash_mode in ("modulo", "cuadrado", "plegamiento", "truncamiento", "conversion_bases") else "modulo"
+            hash_mode
+            if hash_mode in ("modulo", "cuadrado", "plegamiento", "truncamiento", "conversion_bases")
+            else "modulo"
         )
         self.probe_mode.set(
-            probe_mode if probe_mode in ("lineal", "cuadratica", "doble_hash", "arreglo_anidado", "lista_enlazada") else "lineal"
+            probe_mode
+            if probe_mode in ("lineal", "cuadratica", "doble_hash", "arreglo_anidado", "lista_enlazada")
+            else "lineal"
         )
 
-        # re-inicializar estructuras según modo
-        if probe_mode in ["lineal", "cuadratica", "doble_hash"]:
-            self._table = table + [None] * (n - len(table))
+        # Recalcular n, número de bloques y tamaño de bloque
+        self._read_params()  # actualiza self.n, self.b, self.block_size
+
+        mode = self.probe_mode.get()
+
+        # --- Reconstruir estructuras internas según el modo ---
+        if mode in ["lineal", "cuadratica", "doble_hash"]:
+            # table puede venir más corta que n
+            self._table = table + [None] * (self.n - len(table))
             self._table_anidado = []
             self._table_enlazada = []
-        elif probe_mode == "arreglo_anidado":
-            self._table = table + [None] * (n - len(table))
-            self._table_anidado = [anidados.get(i, []) for i in range(n)]
+        elif mode == "arreglo_anidado":
+            self._table = table + [None] * (self.n - len(table))
+            self._table_anidado = [anidados.get(i, []) for i in range(self.n)]
             self._table_enlazada = []
         else:  # lista_enlazada
             self._table = []
             self._table_anidado = []
-            self._table_enlazada = [listas.get(i, []) for i in range(n)]
+            self._table_enlazada = [listas.get(i, []) for i in range(self.n)]
+
+        # Marcar que la estructura ya existe (para que _draw pinte)
+        self.structure_created = True
 
         self._highlight_slot = None
         self._highlight_pos = None
-        self.status.configure(text=f"Tabla cargada (n={n}, d={d})")
+
+        self.status.configure(
+            text=(
+                f"Tabla cargada: n={self.n}, bloques={self.b}, "
+                f"registros por bloque={self.block_size}"
+            )
+        )
         self._draw()
+

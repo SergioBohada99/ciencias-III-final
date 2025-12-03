@@ -47,36 +47,34 @@ class IndicesView(ttk.Frame):
         row += 1
         ttk.Label(ops, text="Tipo de índice:").grid(row=row, column=0, sticky="w", pady=(8, 2))
 
-        self.index_type = tk.StringVar(value="primario")
+        # Variable interna: siempre "primary" o "secondary"
+        self.index_type = tk.StringVar(value="primary")
+
+        # ComboBox solo para visual (Primario/Secundario)
         self.cmb_index_type = ttk.Combobox(
             ops,
-            textvariable=self.index_type,
             state="readonly",
-            values=[
-                "Primario",
-                "Secundario",
-            ],
+            values=["Primario", "Secundario"],
         )
         self.cmb_index_type.grid(row=row, column=1, sticky="w", pady=(8, 2))
+        self.cmb_index_type.current(0)  # Mostrar "Primario" por defecto
 
-        # Mapear valores visuales a valores internos usados por tu lógica
-        def _update_index_type(event):
+        def _update_index_type(event=None):
             selected = self.cmb_index_type.get()
             if selected == "Primario":
-                self.index_type.set("primario")
+                self.index_type.set("primary")
             else:
-                self.index_type.set("secundario")
+                self.index_type.set("secondary")
 
+        # Sincronizar al inicio
+        _update_index_type()
         self.cmb_index_type.bind("<<ComboboxSelected>>", _update_index_type)
-
-        # Establecer valor inicial visible
-        self.cmb_index_type.current(0)
 
         # Check: índice multinivel
         row += 1
         self.is_multilevel = tk.BooleanVar(value=False)
         chk_multilevel = ttk.Checkbutton(ops, text="Índice multinivel", variable=self.is_multilevel)
-        chk_multilevel.grid(row=row, column=1, sticky="w", pady=(4,4), padx=(0,0))
+        chk_multilevel.grid(row=row, column=1, sticky="w", pady=(4, 4), padx=(0, 0))
 
         # Parámetros del índice (v, p)
         row += 1
@@ -147,7 +145,7 @@ class IndicesView(ttk.Frame):
         self._last_calc = None
 
         # ---------------------------------------------------------------------
-        # Panel inferior: guardar / cargar
+        # Panel inferior: guardar / cargar / limpiar
         # ---------------------------------------------------------------------
         file_panel = ttk.Frame(self, style="Panel.TFrame", padding=8)
         file_panel.pack(fill=tk.X, padx=4, pady=6)
@@ -161,11 +159,11 @@ class IndicesView(ttk.Frame):
         btn_load = ttk.Button(file_panel, text="Cargar", command=self._on_load)
         btn_load.grid(row=0, column=2, padx=4, pady=2)
 
-        back = ttk.Button(self, text="← Volver", command=lambda: app.navigate("externas"))
-        back.pack(pady=6)
-
         btn_clear = ttk.Button(file_panel, text="Limpiar pantalla", command=self._on_clear)
         btn_clear.grid(row=0, column=3, padx=4, pady=2)
+
+        back = ttk.Button(self, text="← Volver", command=lambda: app.navigate("externas"))
+        back.pack(pady=6)
 
         self.app = app
 
@@ -213,7 +211,7 @@ class IndicesView(ttk.Frame):
             return
 
         # ri = nº total de entradas del índice
-        if self.index_type.get() == "primario":
+        if self.index_type.get() == "primary":
             # Índice primario (no denso): una entrada por bloque de datos
             ri = b
         else:
@@ -285,10 +283,7 @@ class IndicesView(ttk.Frame):
         self._draw_visualization()
 
     # -------------------------------------------------------------------------
-    # Visualización en Canvas:
-    #   - Índice nivel 1: estructura única con Bloque 1 / Bloque i / Bloque final
-    #   - Datos:          estructura única con Bloque 1 / Bloque j / Bloque final
-    #   - Multinivel:     cada nivel (>=2) como estructura única con Bloque 1 / i / final
+    # Visualización en Canvas
     # -------------------------------------------------------------------------
     def _draw_visualization(self) -> None:
         self.canvas.delete("all")
@@ -327,7 +322,9 @@ class IndicesView(ttk.Frame):
         margin_y = 70
         header_h = 20
         row_h = 14
-        max_rows_per_block = 4
+
+        # Más filas visibles por bloque para rellenar mejor
+        max_rows_per_block = 6
 
         section_h = max_rows_per_block * row_h
         content_h = 3 * section_h
@@ -373,13 +370,18 @@ class IndicesView(ttk.Frame):
             self.canvas.create_line(x1, y_bottom, x2, y_bottom, fill="#444444")
 
         # ------------------------------------------------------------------
-        # 1) Datos de ejemplo respetando capacidades
+        # 1) Datos de ejemplo respetando capacidades (LLENOS)
         # ------------------------------------------------------------------
-        max_sample_records = min(10, r, b * bfr) if bfr > 0 and b > 0 else 0
-        max_sample_index_entries = min(5, ri, bi * bfri) if bfri > 0 and bi > 0 else 0
+        # Generamos tantos registros como permite el fichero: min(r, b*bfr)
+        max_sample_records = min(r, b * bfr) if bfr > 0 and b > 0 else 0
+        # Generamos tantas entradas de índice como quepan: min(ri, bi*bfri)
+        max_sample_index_entries = min(ri, bi * bfri) if bfri > 0 and bi > 0 else 0
 
-        names_pool = ["Juan", "Carlos", "Ana", "María", "Luis",
-                      "Sofía", "Pedro", "Lucía", "David", "Steven", "Diana", "José"]
+        names_pool = [
+            "Juan", "Carlos", "Ana", "María", "Luis", "Sofía",
+            "Pedro", "Lucía", "David", "Steven", "Diana", "José",
+            "Elena", "Andrés", "Paula", "Camila", "Mateo", "Sara",
+        ]
 
         example_records: list[tuple[int, str]] = []
         for i in range(max_sample_records):
@@ -399,8 +401,8 @@ class IndicesView(ttk.Frame):
 
         # Entradas de índice
         index_entries: list[tuple[str, str]] = []
-        if index_type == "primario":
-            # primario: indexación = id del primer registro en el bloque, puntero = Bk
+        if index_type == "primary":
+            # Primario: indexación = id del primer registro en el bloque, puntero = Bk
             for block_idx, rows in enumerate(data_blocks):
                 if not rows:
                     continue
@@ -410,7 +412,7 @@ class IndicesView(ttk.Frame):
                 if len(index_entries) >= max_sample_index_entries:
                     break
         else:
-            # secundario: indexación = nombre, puntero = id, ORDENADO alfabéticamente
+            # Secundario: indexación = nombre, puntero = id, ORDENADO alfabéticamente
             temp_entries = [(name, str(rec_id)) for rec_id, name in example_records]
             temp_entries.sort(key=lambda x: x[0].lower())
             index_entries.extend(temp_entries[:max_sample_index_entries])
@@ -525,7 +527,7 @@ class IndicesView(ttk.Frame):
                     )
 
                     # Filas cosméticas
-                    for row_idx in range(min(2, max_rows_per_block)):
+                    for row_idx in range(min(4, max_rows_per_block)):
                         row_y = sec_y1 + row_h * row_idx + row_h / 2
                         idx_val = f"K{level_num}{row_idx + 1}"
                         ptr_val = f"L{level_num}_B{block_idx if block_idx is not None else 0}"
@@ -556,8 +558,8 @@ class IndicesView(ttk.Frame):
         # ------------------------------------------------------------------
         # 3) Índice nivel 1 como estructura única
         # ------------------------------------------------------------------
-        idx_type_text = "Primario (no denso)" if index_type == "primario" else "Secundario (denso)"
-        idx_fill = "#e3f3ff" if index_type == "primario" else "#dfffea"
+        idx_type_text = "Primario (no denso)" if index_type == "primary" else "Secundario (denso)"
+        idx_fill = "#e3f3ff" if index_type == "primary" else "#dfffea"
 
         self.canvas.create_text(
             idx_center_x,
@@ -688,8 +690,9 @@ class IndicesView(ttk.Frame):
 
                 if block_idx is not None and block_idx < len(index_blocks):
                     rows = index_blocks[block_idx]
-                    for row_idx, (idx_val, ptr_val) in enumerate(rows[:max_rows_per_block]):
+                    for row_idx in range(min(max_rows_per_block, len(rows))):
                         row_y = sec_y1 + row_h * row_idx + row_h / 2
+                        idx_val, ptr_val = rows[row_idx]
                         self.canvas.create_text(
                             (inner_x1 + mid_x) / 2,
                             row_y,
@@ -901,7 +904,7 @@ class IndicesView(ttk.Frame):
             "  • El ÍNDICE (nivel 1) y los BLOQUES DE DATOS se muestran como estructuras únicas divididas en bloques.\n"
             "  • Las llaves indican Bloque 1, Bloque i/j y Bloque final (solo si hay suficientes bloques).\n"
             "  • Las flechas conectan los bloques lógicos del índice con los bloques físicos de datos.\n"
-            "  • Los datos (id, nombre) son de ejemplo; r, b, bi, bfr y bfri provienen de los cálculos reales.\n"
+            "  • Los datos (id, nombre) e índices son de ejemplo, pero r, b, bi, bfr y bfri provienen de los cálculos reales.\n"
             f"{multinivel_line}"
         )
 
@@ -913,11 +916,6 @@ class IndicesView(ttk.Frame):
             font=("Arial", 9),
             fill="#444444",
         )
-
-
-
-
-
 
 
     # -------------------------------------------------------------------------
@@ -957,9 +955,8 @@ class IndicesView(ttk.Frame):
             "R": safe_get_entry("entry_R"),
             "v": safe_get_entry("entry_v"),
             "p": safe_get_entry("entry_p"),
-            "B_index": safe_get_entry("entry_B_index"),
-            "index_type": getattr(self, "index_type", None).get() if hasattr(self, "index_type") else None,
-            "is_multilevel": getattr(self, "is_multilevel_var", None).get() if hasattr(self, "is_multilevel_var") else None,
+            "index_type": self.index_type.get() if hasattr(self, "index_type") else None,
+            "is_multilevel": self.is_multilevel.get() if hasattr(self, "is_multilevel") else None,
         }
 
         try:
@@ -990,7 +987,6 @@ class IndicesView(ttk.Frame):
             filetypes=[("Archivos JSON", "*.json"), ("Todos los archivos", "*.*")]
         )
         if file_path:
-            # Reutilizamos la lógica de _on_save pero forzando la ruta
             data_to_save = {
                 "params": {},
                 "calc": self._last_calc,
@@ -1009,9 +1005,8 @@ class IndicesView(ttk.Frame):
                 "R": safe_get_entry("entry_R"),
                 "v": safe_get_entry("entry_v"),
                 "p": safe_get_entry("entry_p"),
-                "B_index": safe_get_entry("entry_B_index"),
-                "index_type": getattr(self, "index_type", None).get() if hasattr(self, "index_type") else None,
-                "is_multilevel": getattr(self, "is_multilevel_var", None).get() if hasattr(self, "is_multilevel_var") else None,
+                "index_type": self.index_type.get() if hasattr(self, "index_type") else None,
+                "is_multilevel": self.is_multilevel.get() if hasattr(self, "is_multilevel") else None,
             }
 
             try:
@@ -1020,7 +1015,6 @@ class IndicesView(ttk.Frame):
                 messagebox.showinfo("Guardar", "Configuración guardada correctamente.")
             except Exception as e:
                 messagebox.showerror("Error al guardar", f"No se pudo guardar el archivo:\n{e}")
-                # Si falla el guardado, no salimos
                 return
 
         # Navegamos de vuelta al menú anterior
@@ -1071,12 +1065,10 @@ class IndicesView(ttk.Frame):
         safe_set_entry("entry_R", params.get("R"))
         safe_set_entry("entry_v", params.get("v"))
         safe_set_entry("entry_p", params.get("p"))
-        safe_set_entry("entry_B_index", params.get("B_index"))
 
         # Tipo de índice (primario/secundario)
         if hasattr(self, "index_type") and params.get("index_type"):
             self.index_type.set(params["index_type"])
-            # Si tienes un Combobox asociado:
             if hasattr(self, "cmb_index_type"):
                 if params["index_type"] == "primary":
                     self.cmb_index_type.set("Primario")
@@ -1084,9 +1076,9 @@ class IndicesView(ttk.Frame):
                     self.cmb_index_type.set("Secundario")
 
         # Índice multinivel (checkbutton)
-        if hasattr(self, "is_multilevel_var") and params.get("is_multilevel") is not None:
+        if hasattr(self, "is_multilevel") and params.get("is_multilevel") is not None:
             try:
-                self.is_multilevel_var.set(params["is_multilevel"])
+                self.is_multilevel.set(params["is_multilevel"])
             except Exception:
                 pass
 
@@ -1098,8 +1090,7 @@ class IndicesView(ttk.Frame):
         """Limpia todo el canvas y elimina resultados anteriores."""
         self.canvas.delete("all")
         self._last_calc = None
-        
-        # Mensaje visual opcional
+
         self.canvas.create_text(
             10, 10,
             anchor="nw",
