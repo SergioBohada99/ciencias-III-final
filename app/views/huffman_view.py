@@ -165,29 +165,34 @@ class HuffmanView(ttk.Frame):
 			self.huffman_codes = {}
 			self._draw()
 			return
-		
-		# Crear nodos hoja
-		heap = []
+
+		# Crear nodos hoja con prioridad estable (freq, orden, nodo)
+		heap: List[Tuple[int, int, HuffmanNode]] = []
+		counter = 0  # contador global de creación de nodos
+
+		# dict mantiene el orden de inserción → orden de ingreso de la letra
 		for char, freq in self.frequencies.items():
 			node = HuffmanNode(char, freq)
-			heapq.heappush(heap, node)
-		
+			heapq.heappush(heap, (freq, counter, node))
+			counter += 1
+
 		# Construir el árbol
 		while len(heap) > 1:
-			left = heapq.heappop(heap)
-			right = heapq.heappop(heap)
-			
+			freq1, order1, left = heapq.heappop(heap)
+			freq2, order2, right = heapq.heappop(heap)
+
 			merged = HuffmanNode(
 				char=None,
-				freq=left.freq + right.freq,
+				freq=freq1 + freq2,
 				left=left,
-				right=right
+				right=right,
 			)
-			
-			heapq.heappush(heap, merged)
-		
-		self.root_node = heap[0] if heap else None
-		
+
+			heapq.heappush(heap, (freq1 + freq2, counter, merged))
+			counter += 1
+
+		self.root_node = heap[0][2] if heap else None
+
 		# Generar códigos
 		self.huffman_codes = {}
 		if self.root_node:
@@ -195,8 +200,9 @@ class HuffmanView(ttk.Frame):
 				self.huffman_codes[self.root_node.char] = "0"
 			else:
 				self._generate_codes(self.root_node, "")
-		
+
 		self._draw()
+
 
 	def _generate_codes(self, node: HuffmanNode, code: str) -> None:
 		"""Genera los códigos de Huffman recursivamente"""
@@ -269,35 +275,39 @@ class HuffmanView(ttk.Frame):
 		if not self.frequencies:
 			messagebox.showinfo("Información", "Agregue letras primero para construir el árbol")
 			return
-		
+
 		# Guardar estado antes de construir
 		self._save_state()
-		
+
 		# Preparar animación de construcción
 		self._anim_steps = [("frequencies", dict(self.frequencies))]
-		
-		# Crear nodos hoja para animación
-		heap = []
+
+		# Crear nodos hoja para animación con prioridad estable
+		heap: List[Tuple[int, int, HuffmanNode]] = []
+		counter = 0
 		for char, freq in self.frequencies.items():
 			node = HuffmanNode(char, freq)
-			heapq.heappush(heap, node)
-		
+			heapq.heappush(heap, (freq, counter, node))
+			counter += 1
+
 		# Simular construcción para animación
 		while len(heap) > 1:
-			left = heapq.heappop(heap)
-			right = heapq.heappop(heap)
-			
+			freq1, order1, left = heapq.heappop(heap)
+			freq2, order2, right = heapq.heappop(heap)
+
 			merged = HuffmanNode(
 				char=None,
-				freq=left.freq + right.freq,
+				freq=freq1 + freq2,
 				left=left,
-				right=right
+				right=right,
 			)
-			
-			heapq.heappush(heap, merged)
+
+			heapq.heappush(heap, (freq1 + freq2, counter, merged))
+			counter += 1
+
+			# Guardamos los nodos reales para la animación
 			self._anim_steps.append(("merge", (left, right, merged)))
-		
-		# El árbol ya está construido por _rebuild_tree()
+
 		self.status.configure(text=f"Árbol construido con {len(self.frequencies)} caracteres únicos")
 		self._prepare_animation()
 
